@@ -66,7 +66,7 @@ def run_monitor():
             tg_send(TOK, u["chat_id"],
                 "Signal Monitor v3 Online\nMulti-TP | SMC+Scalp | TP/SL tracking")
 
-    last_scan = last_session = last_news = last_track = 0
+    last_scan = last_session = last_news = last_track = last_heartbeat = 0
 
     while True:
         try:
@@ -159,6 +159,16 @@ def run_monitor():
                     for u in get_active_users_with_subs():
                         tg_send(TOK, u["chat_id"], na)
                 last_news = now
+
+            # Heartbeat every 30 min so you know system is alive
+            if now - last_heartbeat > 1800:
+                for u in get_active_users_with_subs():
+                    from signal_engine import get_active_signal_count
+                    active_count = sum(get_active_signal_count(s) for s in active_syms)
+                    tg_send(TOK, u["chat_id"],
+                        f"\u2705 Monitor Active\nTracking {len(active_syms)} symbols\n{active_count} open positions\n"
+                        "Next scan in 45s")
+                last_heartbeat = now
 
             time.sleep(10)
 
