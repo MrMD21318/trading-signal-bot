@@ -145,6 +145,17 @@ def fmt2(n):
 
 
 def run_monitor():
+    import pytz
+    TOK = os.getenv("TELEGRAM_BOT_TOKEN", "8644679098:AAF0Ag9nNOElhldvpTXXO2rHLB7dPmOtM5A")
+    DEFAULT = "CFI:US100"
+
+    def tg_send(token, chat_id, text):
+        import requests
+        try:
+            requests.post(f"https://api.telegram.org/bot{token}/sendMessage",
+                         json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"}, timeout=10)
+        except:
+            pass
 
     active_users = get_active_users_with_subs()
     if active_users:
