@@ -26,7 +26,8 @@ def init_db():
             active INTEGER DEFAULT 0,
             alerts_received INTEGER DEFAULT 0,
             joined_at TEXT DEFAULT '',
-            last_alert_at TEXT DEFAULT ''
+            last_alert_at TEXT DEFAULT '',
+            subscription_expiry TEXT DEFAULT ''
         );
 
         CREATE TABLE IF NOT EXISTS user_symbols (
@@ -106,6 +107,41 @@ def set_user_active(chat_id, active):
     conn.execute("UPDATE users SET active=?, alerts_received=0 WHERE chat_id=?", (int(active), chat_id))
     conn.commit()
     conn.close()
+
+
+def set_user_expiry(chat_id, days=30):
+    """Set subscription expiry to N days from now."""
+    from datetime import timedelta
+    expiry = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+    conn = get_conn()
+    conn.execute("UPDATE users SET subscription_expiry=? WHERE chat_id=?", (expiry, chat_id))
+    conn.commit()
+    conn.close()
+    return expiry
+
+
+def is_subscription_valid(chat_id):
+    conn = get_conn()
+    u = conn.execute("SELECT active, subscription_expiry FROM users WHERE chat_id=?", (chat_id,)).fetchone()
+    conn.close()
+    if not u or not u["active"]:
+        return False
+    if u["subscription_expiry"]:
+        from datetime import timezone as tz
+        expiry = datetime.fromisoformat(u["subscription_expiry"])
+        if datetime.now(tz.utc) > expiry:
+            return False
+    return True
+
+
+def get_pending_users():
+    """Users who are not active (pending admin approval)."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM users WHERE active=0 ORDER BY joined_at DESC"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 def set_user_phone(chat_id, phone):
@@ -235,3 +271,11 @@ def get_total_stats():
 
 # Initialize on import
 init_db()
+# Migration: add subscription_expiry if column doesn't exist
+try:
+    conn = get_conn()
+    conn.execute("ALTER TABLE users ADD COLUMN subscription_expiry TEXT DEFAULT ''")
+    conn.commit()
+    conn.close()
+except:
+    pass

@@ -120,26 +120,30 @@ def handle_message(msg):
 
     if text in ("/start", "start"):
         user = get_user(chat_id)
-        syms = get_user_symbols(chat_id)
-        syms_list = [s["symbol"] for s in syms]
-        if syms:
+        if user and user.get("active"):
+            # Already active
+            syms = get_user_symbols(chat_id)
+            syms_list = [s["symbol"] for s in syms]
+            expiry = user.get("subscription_expiry", "")
+            exp_str = f"\nSubscription expires: {expiry[:10]}" if expiry else ""
             send_msg(chat_id,
-                f"👋 Welcome back <b>{first}</b>!\n\n"
-                f"Your markets: <code>{', '.join(syms_list)}</code>\n\n"
-                "Use the menu below:",
+                f"\U0001f44b Welcome back <b>{first}</b>!\n\n"
+                f"Status: <b>ACTIVE</b>{exp_str}\n"
+                f"Markets: <code>{', '.join(syms_list) or 'None'}</code>\n\n"
+                "You are receiving trading signals.\n"
+                "/menu — Manage | /status — Stats | /stop — Pause",
                 main_menu_keyboard(),
             )
         else:
+            # New or pending user — show pending message
             send_msg(chat_id,
-                f"👋 Welcome <b>{first}</b>!\n\n"
-                "Let me set up your trading alerts.\n"
-                "<b>Select which markets you want to track:</b>",
-                markets_keyboard([]),
+                f"\U0001f44b Welcome <b>{first}</b>!\n\n"
+                "\u23f3 <b>Your account is pending activation.</b>\n\n"
+                "The admin needs to activate your account and assign markets before you can receive signals.\n\n"
+                "You'll receive a confirmation message once activated.\n\n"
+                "<i>Your Chat ID: <code>{}</code></i>".format(chat_id),
             )
-            user_states[chat_id] = {"state": "choosing", "selected": [], "message_id": None}
-
-    # Store the message_id for the /start menu to edit later
-    return "ok"
+        return "ok"
 
 
 def handle_callback(cb):

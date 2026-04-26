@@ -34,6 +34,7 @@ from database import (
     get_all_users, get_user, set_user_active, set_user_phone,
     add_user_symbol, remove_user_symbol, get_user_symbols,
     get_recent_alerts, get_total_stats, upsert_user,
+    set_user_expiry, is_subscription_valid, get_pending_users,
 )
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
@@ -92,6 +93,24 @@ def api_user(chat_id):
         data = request.get_json() or {}
         if "active" in data:
             set_user_active(chat_id, data["active"])
+            if data["active"]:
+                # Set default 30-day subscription when activating
+                set_user_expiry(chat_id, data.get("days", 30))
+            # Send notification to user
+            TOK = os.getenv("TELEGRAM_BOT_TOKEN", "8644679098:AAF0Ag9nNOElhldvpTXXO2rHLB7dPmOtM5A")
+            if data["active"]:
+                syms = get_user_symbols(chat_id)
+                syms_str = ", ".join(s["symbol"] for s in syms) if syms else "None"
+                import requests as req
+                req.post(f"https://api.telegram.org/bot{TOK}/sendMessage", json={
+                    "chat_id": chat_id,
+                    "text": f"\u2705 <b>Activated!</b>\n\nMarkets: <code>{syms_str}</code>\nSubscription: {data.get('days', 30)} days\n\nYou will now receive trading signals.",
+                    "parse_mode": "HTML",
+                }, timeout=10)
+        if "days" in data:
+            set_user_expiry(chat_id, data["days"])
+        if "phone" in data:
+            set_user_phone(chat_id, data["phone"])
         return jsonify({"ok": True})
     if request.method == "DELETE":
         from database import get_conn
