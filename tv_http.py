@@ -1,4 +1,4 @@
-"""Symbol search — uses yfinance (reliable, stocks+ETFs+indices) + manual TV symbol entry."""
+"""Symbol search + chart data using yfinance (primary) and TV bridge (fallback)."""
 
 import logging
 
@@ -6,34 +6,24 @@ logger = logging.getLogger(__name__)
 
 
 def search_tv(query, limit=15):
-    """Search for trading symbols. Uses yfinance for stocks/ETFs.
-    
-    For CFD/Forex/Crypto TV symbols (e.g., CFI:US100, BINANCE:BTCUSDT),
-    type them directly in the "Add Market" input field.
-    """
+    """Search symbols. Uses yfinance + tvscreener fallback."""
     results = []
 
-    # Primary: Yahoo Finance (reliable, no auth needed)
     try:
         import yfinance as yf
         sr = yf.Search(query)
-        if hasattr(sr, 'quotes') and sr.quotes:
+        if hasattr(sr, "quotes") and sr.quotes:
             for q in sr.quotes[:limit]:
-                sym = q.get('symbol', '')
-                name = q.get('shortname') or q.get('longname', '')
-                etype = q.get('quoteType', '')
-                exch = q.get('exchange', '')
                 results.append({
-                    "symbol": sym,
-                    "description": name,
-                    "type": etype,
-                    "exchange": exch,
-                    "full_symbol": f"{exch}:{sym}" if exch else sym,
+                    "symbol": q.get("symbol", ""),
+                    "description": q.get("shortname") or q.get("longname", ""),
+                    "type": q.get("quoteType", ""),
+                    "exchange": q.get("exchange", ""),
+                    "full_symbol": f"{q.get('exchange', '')}:{q.get('symbol', '')}" if q.get("exchange") else q.get("symbol", ""),
                 })
     except Exception as e:
         logger.debug("YFinance search error: %s", e)
 
-    # Fallback: try tvscreener stock search
     if not results:
         try:
             import tvscreener as tvs
@@ -50,55 +40,63 @@ def search_tv(query, limit=15):
                         "full_symbol": str(row.get("Symbol", "")),
                     })
         except Exception as e:
-            logger.debug("TV Screener search error: %s", e)
+            logger.debug("TV screener search error: %s", e)
 
     return results
 
 
 def get_chart_data(symbol, timeframe="1D", bars=30):
-    """Get OHLCV data from TradingView via public chart API."""
+    """Get OHLCV candles. Tries TV bridge first, falls back to yfinance."""
+    result = []
+
     try:
-        # TradingView chart data API
-        resolution_map = {
-            "1": "1", "5": "5", "15": "15", "30": "30",
-            "60": "60", "240": "240", "1D": "D", "1W": "W", "1M": "M",
-        }
-        res = resolution_map.get(timeframe, "D")
-
-        url = "https://scanner.tradingview.com/america/scan"
-        # This is the screener approach - for chart data we use a different endpoint
-        # Fall back to tvscreener lib or bridge
-
-        # Try bridge first, then fall back
-        try:
-            from tradingagents.dataflows.tv_realtime import get_live_chart
-            raw = get_live_chart(symbol, timeframe=timeframe, range_bars=bars)
-            result = []
-            for line in raw.strip().split("\n"):
-                if line.startswith("#") or line.startswith("time,"):
-                    continue
-                parts = line.split(",")
-                if len(parts) >= 5:
-                    try:
-                        result.append({
-                            "time": int(float(parts[0])),
-                            "open": float(parts[1]),
-                            "high": float(parts[2]),
-                            "low": float(parts[3]),
-                            "close": float(parts[4]),
-                            "volume": float(parts[5]) if len(parts) > 5 else 0,
-                        })
-                    except ValueError:
-                        pass
-            if result:
-                return result
-        except:
-            pass
-
-        # Fallback: empty result
-        logger.warning("Chart data unavailable for %s", symbol)
-        return []
-
+        from tradingagents.dataflows.tv_realtime import get_live_chart
+        raw = get_live_chart(symbol, timeframe=timeframe, range_bars=bars)
+        for line in raw.strip().split("\n"):
+            if line.startswith("#") or line.startswith("time,"):
+                continue
+            parts = line.split(",")
+            if len(parts) >= 5:
+                try:
+                    result.append({
+                        "time": int(float(parts[0])),
+                        "open": float(parts[1]),
+                        "high": float(parts[2]),
+                        "low": float(parts[3]),
+                        "close": float(parts[4]),
+                        "volume": float(parts[5]) if len(parts) > 5 else 0,
+                    })
+                except ValueError:
+                    pass
+        if result:
+            return result
     except Exception as e:
-        logger.warning("Chart fetch failed: %s", e)
-        return []
+        logger.debug("TV bridge chart failed: %s", e)
+
+    try:
+        import yfinance as yf
+        period_map = {"1D": "1mo", "1W": "6mo", "1M": "2y"}
+        interval_map = {
+            "1": "1m", "5": "5m", "15": "15m", "30": "30m",
+            "60": "1h", "240": "4h", "1D": "1d", "1W": "1wk", "1M": "1mo",
+        }
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(
+            period=period_map.get(timeframe, "1mo"),
+            interval=interval_map.get(timeframe, "1d"),
+        )
+        if hist is not None and not hist.empty:
+            for idx, row in hist.tail(bars).iterrows():
+                result.append({
+                    "time": int(idx.timestamp()),
+                    "open": float(row["Open"]),
+                    "high": float(row["High"]),
+                    "low": float(row["Low"]),
+                    "close": float(row["Close"]),
+                    "volume": float(row["Volume"]),
+                })
+            return result
+    except Exception as e:
+        logger.debug("YFinance chart failed: %s", e)
+
+    return result
