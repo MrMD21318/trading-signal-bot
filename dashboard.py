@@ -55,17 +55,18 @@ def static_files(path):
 
 @app.route("/api/test-signal")
 def api_test_signal():
-    """Send a test signal to all active users to verify pipeline."""
+    """Send a test signal to verify pipeline."""
     symbol = "CFI:US100"
     try:
         from run_us100_monitor import get_candles, fmt
         m1 = get_candles(symbol, "1", 5)
         m5 = get_candles(symbol, "5", 5)
-        price = m5[0][4] if m5 else (m1[0][4] if m1 else 0)
+        d1 = get_candles(symbol, "1D", 10)
+        price = m5[0][4] if m5 else (m1[0][4] if m1 else (d1[0][4] if d1 else 0))
         candle_count_1m = len(m1) if m1 else 0
         candle_count_5m = len(m5) if m5 else 0
+        candle_count_1d = len(d1) if d1 else 0
 
-        # Try sending a test message
         TOK = os.getenv("TELEGRAM_BOT_TOKEN", "8644679098:AAF0Ag9nNOElhldvpTXXO2rHLB7dPmOtM5A")
         from database import get_active_users_with_subs
         users = get_active_users_with_subs()
@@ -75,7 +76,7 @@ def api_test_signal():
             for u in users:
                 r = req.post(f"https://api.telegram.org/bot{TOK}/sendMessage", json={
                     "chat_id": u["chat_id"],
-                    "text": f"\U0001f6e0 <b>System Test</b>\n\nPrice: <code>{fmt(price)}</code>\n1M candles: {candle_count_1m}\n5M candles: {candle_count_5m}\n\nPing from dashboard test.",
+                    "text": f"\U0001f6e0 <b>System Test</b>\n\nSymbol: {symbol}\nPrice: <code>{fmt(price)}</code>\n1M: {candle_count_1m} candles | 5M: {candle_count_5m} | 1D: {candle_count_1d}\n\nData pipeline: {'OK' if price>0 else 'FAIL'}",
                     "parse_mode": "HTML",
                 }, timeout=10)
                 if r.status_code == 200:
@@ -86,6 +87,7 @@ def api_test_signal():
             "price": price,
             "candles_1m": candle_count_1m,
             "candles_5m": candle_count_5m,
+            "candles_1d": candle_count_1d,
             "users_notified": sent_count,
             "active_users": len(users),
         })

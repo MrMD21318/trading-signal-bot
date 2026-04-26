@@ -1,0 +1,14 @@
+# Nixpacks configuration for Coolify
+# Tells Coolify to install BOTH Python + Node.js in the container
+
+[phases.setup]
+nixPkgs = ["nodejs", "python311"]
+
+[phases.install]
+cmds = [
+    "pip install -r requirements.txt",
+    "cd tv_bridge && npm install && cd ..",
+]
+
+[start]
+cmd = "python run.py"
