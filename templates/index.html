@@ -113,9 +113,15 @@
   <div class="topbar">
     <h1>📈 Markets</h1>
     <div class="search-box">
-      <input id="market-search" placeholder="Search TradingView..." style="width:240px">
+      <input id="market-search" placeholder="Search (AAPL, BTC, EURUSD)..." style="width:260px">
       <button class="btn btn-primary btn-sm" onclick="searchMarket()">Search</button>
+      <span style="color:var(--text2);font-size:11px">CFD/Indices: type symbol manually below</span>
     </div>
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:12px">
+    <input id="manual-symbol" placeholder="Manual: CFI:US100, BINANCE:BTCUSDT..." style="flex:1">
+    <input id="manual-name" placeholder="Display name" style="width:200px">
+    <button class="btn btn-success btn-sm" onclick="addManual()">Add Manually</button>
   </div>
   <div id="search-results" style="margin-bottom:12px"></div>
   <div class="table-card">

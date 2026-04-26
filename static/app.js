@@ -268,6 +268,17 @@ async function toggleMarket(sym, active) {
   loadMarkets();
 }
 
+async function addManual() {
+  const sym = document.getElementById("manual-symbol").value.trim();
+  const name = document.getElementById("manual-name").value.trim();
+  if (!sym) return toast("Enter a symbol", "error");
+  await post("/symbols", { symbol: sym, name: name || sym });
+  toast("Symbol added: " + sym);
+  document.getElementById("manual-symbol").value = "";
+  document.getElementById("manual-name").value = "";
+  loadMarkets();
+}
+
 // ── Init ──
 document.addEventListener("DOMContentLoaded", () => {
   showPage("dashboard");

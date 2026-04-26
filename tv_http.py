@@ -1,44 +1,58 @@
-"""Lightweight TradingView search and chart using direct HTTP — no Node.js bridge needed.
+"""Symbol search — uses yfinance (reliable, stocks+ETFs+indices) + manual TV symbol entry."""
 
-Uses TradingView's public API endpoints directly via Python requests.
-"""
-
-import json
 import logging
-import requests
 
 logger = logging.getLogger(__name__)
 
-TV_SEARCH_URL = "https://symbol-search.tradingview.com/symbol_search/"
-
 
 def search_tv(query, limit=15):
-    """Search TradingView symbols via public HTTP API."""
+    """Search for trading symbols. Uses yfinance for stocks/ETFs.
+    
+    For CFD/Forex/Crypto TV symbols (e.g., CFI:US100, BINANCE:BTCUSDT),
+    type them directly in the "Add Market" input field.
+    """
+    results = []
+
+    # Primary: Yahoo Finance (reliable, no auth needed)
     try:
-        params = {
-            "text": query,
-            "hl": "1",
-            "exchange": "",
-            "lang": "en",
-            "search_type": "",
-            "domain": "production",
-        }
-        r = requests.get(TV_SEARCH_URL, params=params, timeout=10,
-                        headers={"User-Agent": "Mozilla/5.0"})
-        data = r.json()
-        results = []
-        for item in data[:limit]:
-            results.append({
-                "symbol": item.get("symbol", ""),
-                "description": item.get("description", ""),
-                "type": item.get("type", ""),
-                "exchange": item.get("exchange", ""),
-                "full_symbol": item.get("exchange", "") + ":" + item.get("symbol", "") if item.get("exchange") else item.get("symbol", ""),
-            })
-        return results
+        import yfinance as yf
+        sr = yf.Search(query)
+        if hasattr(sr, 'quotes') and sr.quotes:
+            for q in sr.quotes[:limit]:
+                sym = q.get('symbol', '')
+                name = q.get('shortname') or q.get('longname', '')
+                etype = q.get('quoteType', '')
+                exch = q.get('exchange', '')
+                results.append({
+                    "symbol": sym,
+                    "description": name,
+                    "type": etype,
+                    "exchange": exch,
+                    "full_symbol": f"{exch}:{sym}" if exch else sym,
+                })
     except Exception as e:
-        logger.warning("TV search failed: %s", e)
-        return []
+        logger.debug("YFinance search error: %s", e)
+
+    # Fallback: try tvscreener stock search
+    if not results:
+        try:
+            import tvscreener as tvs
+            ss = tvs.StockScreener()
+            ss.where(tvs.StockField.NAME.like(f"*{query}*"))
+            df = ss.get()
+            if df is not None and not df.empty:
+                for _, row in df.head(limit).iterrows():
+                    results.append({
+                        "symbol": str(row.get("Symbol", "")),
+                        "description": str(row.get("Name", "")),
+                        "type": "stock",
+                        "exchange": "",
+                        "full_symbol": str(row.get("Symbol", "")),
+                    })
+        except Exception as e:
+            logger.debug("TV Screener search error: %s", e)
+
+    return results
 
 
 def get_chart_data(symbol, timeframe="1D", bars=30):
