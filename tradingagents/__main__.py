@@ -31,11 +31,14 @@ def run_monitor():
     import pytz
     from run_us100_monitor import (
         get_candles, analyze_candles_1m, analyze_candles_5m,
-        analyze_candles_15m, analyze_swing, fmt, format_signal,
-        check_sessions, check_news, tg,
+        analyze_candles_15m, analyze_swing, check_sessions, check_news, tg,
     )
     from symbol_manager import get_active_symbols
     from smc_analysis import analyze_smc
+    from signal_engine import (
+        select_best_signals, calculate_multi_tp, format_professional_signal,
+        check_active_signals, track_signal,
+    )
 
     TOK = os.getenv("TELEGRAM_BOT_TOKEN", "8644679098:AAF0Ag9nNOElhldvpTXXO2rHLB7dPmOtM5A")
     TZ = pytz.timezone("Asia/Amman")
@@ -49,18 +52,19 @@ def run_monitor():
         except:
             pass
 
-    logger.info("Monitor started")
+    logger.info("Professional Signal Engine started")
     time.sleep(3)
 
     active_users = get_active_users_with_subs()
     if active_users:
         for u in active_users[:5]:
             tg_send(TOK, u["chat_id"],
-                "Signal Monitor Online - you will receive alerts for your markets.\n/menu - manage | /stop - pause")
+                "\U0001f514 Signal Monitor Online\n"
+                "Multi-TP entries only (1:2R+)\n"
+                "Scalp + SMC + Swing\n"
+                "/menu - manage | /stop - pause")
 
-    last_scalp = last_swing = last_smc = last_session = last_news = 0
-    seen = {}
-    smc_seen = {}
+    last_scan = last_session = last_news = last_track = 0
 
     while True:
         try:
@@ -69,7 +73,90 @@ def run_monitor():
             if not active_syms:
                 active_syms = {DEFAULT: {"name": "Nasdaq 100 SPOT"}}
 
-            # Sessions & news
+            for symbol, sym_info in active_syms.items():
+                sym_name = sym_info.get("name", symbol)
+                target_users = get_users_for_symbol(symbol) or get_active_users_with_subs()
+                if not target_users:
+                    continue
+
+                # ── Signal tracking: check TP/SL hits ──
+                if now - last_track > 30:
+                    m1 = get_candles(symbol, "1", 3)
+                    if m1:
+                        current_price = m1[0][4]
+                        alerts = check_active_signals(symbol, current_price)
+                        for a in alerts:
+                            for u in target_users:
+                                tg_send(TOK, u["chat_id"], a)
+
+                # ── Collect all signals across timeframes ──
+                all_signals = []
+
+                if now - last_scan > 45:
+                    m1 = get_candles(symbol, "1", 60)
+                    m5 = get_candles(symbol, "5", 40)
+                    m15 = get_candles(symbol, "15", 30)
+                    m15_smc = get_candles(symbol, "15", 50)
+                    h1 = get_candles(symbol, "60", 24)
+                    d1 = get_candles(symbol, "1D", 20)
+
+                    # 1M signals
+                    for sig in analyze_candles_1m(m1):
+                        sig["symbol"] = symbol; sig["symbol_name"] = sym_name
+                        all_signals.append(sig)
+                    # 5M signals
+                    for sig in analyze_candles_5m(m5):
+                        sig["symbol"] = symbol; sig["symbol_name"] = sym_name
+                        all_signals.append(sig)
+                    # 15M signals
+                    for sig in analyze_candles_15m(m15):
+                        sig["symbol"] = symbol; sig["symbol_name"] = sym_name
+                        all_signals.append(sig)
+                    # SMC signals
+                    for sig in analyze_smc(m15_smc, m5, m1):
+                        sig["symbol"] = symbol; sig["symbol_name"] = sym_name
+                        sig["strategy"] = "SMC"
+                        all_signals.append(sig)
+
+                if now - last_scan > 45:
+                    last_scan = now
+                if now - last_track > 30:
+                    last_track = now
+
+                # ── Select only the best signals ──
+                best = select_best_signals(all_signals)
+
+                # ── Send best signals with multi-TP ──
+                for sig in best:
+                    if get_active_signal_count(symbol) >= 2:
+                        continue
+
+                    # Current price for header
+                    m1_price = get_candles(symbol, "1", 3)
+                    sig["price_now"] = m1_price[0][4] if m1_price else sig["entry"]
+
+                    tp1, tp2, tp3 = calculate_multi_tp(sig)
+                    sig["tp1"] = tp1
+                    sig["tp2"] = tp2
+                    sig["tp3"] = tp3
+
+                    msg = format_professional_signal(sig)
+                    for u in target_users:
+                        tg_send(TOK, u["chat_id"], msg)
+                        log_alert(u["chat_id"], symbol, sig["direction"], sig["setup"],
+                                 sig["entry"], sig["sl"], tp2, sig.get("strategy", ""),
+                                 sig.get("timeframe", ""), sig.get("confidence", 0))
+
+                    # Track this signal
+                    track_signal(symbol, sig["direction"], sig["entry"], sig["sl"],
+                                tp1, tp2, tp3, sig["setup"], sig.get("timeframe", ""),
+                                sig.get("confidence", 0))
+                    time.sleep(1.2)
+
+                if not best and all_signals:
+                    logger.info("%s: %d signals collected, none passed quality filter", symbol, len(all_signals))
+
+            # ── Session & news ──
             if now - last_session > 120:
                 for sa in check_sessions():
                     for u in get_active_users_with_subs():
@@ -81,50 +168,12 @@ def run_monitor():
                         tg_send(TOK, u["chat_id"], na)
                 last_news = now
 
-            for symbol, sym_info in active_syms.items():
-                sym_name = sym_info.get("name", symbol)
-                target_users = get_users_for_symbol(symbol) or get_active_users_with_subs()
-
-                if now - last_scalp > 45:
-                    m1 = get_candles(symbol, "1", 60)
-                    m5 = get_candles(symbol, "5", 40)
-                    m15 = get_candles(symbol, "15", 20)
-                    for sig_func in [lambda m=m1: analyze_candles_1m(m), lambda m=m5: analyze_candles_5m(m), lambda m=m15: analyze_candles_15m(m)]:
-                        for sig in sig_func():
-                            key = f"{symbol}_{sig['direction']}_{sig['setup']}"
-                            if key in seen and now - seen[key] < 600:
-                                continue
-                            seen[key] = now
-                            sig["symbol"] = symbol; sig["symbol_name"] = sym_name
-                            msg = format_signal(sig, is_scalp=True)
-                            for u in target_users:
-                                tg_send(TOK, u["chat_id"], msg)
-                                log_alert(u["chat_id"], symbol, sig["direction"], sig["setup"], sig.get("entry", 0), sig.get("sl", 0), sig.get("tp", 0), "scalp", sig.get("timeframe", ""), sig.get("confidence", 0))
-
-                if now - last_smc > 60:
-                    m15s = get_candles(symbol, "15", 50)
-                    for sig in analyze_smc(m15s, None, None):
-                        key = f"{symbol}_SMC_{sig['direction']}_{sig['setup']}"
-                        if key in smc_seen and now - smc_seen[key] < 600:
-                            continue
-                        smc_seen[key] = now
-                        sig["symbol"] = symbol; sig["symbol_name"] = sym_name
-                        msg = format_signal(sig, is_scalp=True)
-                        for u in target_users:
-                            tg_send(TOK, u["chat_id"], msg)
-                            log_alert(u["chat_id"], symbol, sig["direction"], sig["setup"], sig.get("entry", 0), sig.get("sl", 0), sig.get("tp", 0), "SMC", "15M", sig.get("confidence", 0))
-
-                for d in (seen, smc_seen):
-                    for k in list(d.keys()):
-                        if now - d[k] > 2000: del d[k]
-
-            if now - last_scalp > 45: last_scalp = now
-            if now - last_smc > 60: last_smc = now
             time.sleep(10)
+
         except KeyboardInterrupt:
             break
         except Exception as e:
-            logger.error("Monitor error: %s", e)
+            logger.error("Monitor error: %s", e, exc_info=True)
             time.sleep(15)
 
 
