@@ -178,11 +178,12 @@ def fmt(n):
 
 
 # ── Sessions ────────────────────────────────────────────────
-# Session times in Asia/Amman (GMT+3)
+# All times in Asia/Amman (GMT+3)
 SESSIONS = {
-    "asia":  {"open": 1,  "close": 10, "name": "Asia/Tokyo"},
-    "london":{"open": 10, "close": 18, "name": "London"},
-    "ny":    {"open": 15, "close": 23, "name": "New York"},
+    "asia":     {"open": 3,  "close": 10, "name": "Asia"},
+    "london":   {"open": 10, "close": 19, "name": "London"},
+    "ny_forex": {"open": 15, "close": 19, "name": "NY Forex"},
+    "wall_st":  {"open": 16, "close": 23, "name": "Wall Street (NYSE/NASDAQ)"},
 }
 
 # Track session START/END prices
@@ -202,7 +203,7 @@ def get_current_session(hour=None):
 
 
 def get_session_emoji(session_key):
-    emojis = {"asia": "\U0001f1ef\U0001f1f5", "london": "\U0001f1ec\U0001f1e7", "ny": "\U0001f1fa\U0001f1f8"}
+    emojis = {"asia": "\U0001f1ef\U0001f1f5", "london": "\U0001f1ec\U0001f1e7", "ny_forex": "\U0001f4b1", "wall_st": "\U0001f3db"}
     return emojis.get(session_key, "\u23f0")
 
 # Nas100 CFD trades 24hrs Mon 01:01 → Fri 23:59 (Amman time)
@@ -270,7 +271,7 @@ def check_sessions():
         _last_market_alert = None
 
     # ── Session Alerts ──
-    emoji_map = {"asia": "\U0001f1ef\U0001f1f5", "london": "\U0001f1ec\U0001f1e7", "ny": "\U0001f1fa\U0001f1f8"}
+    emoji_map = {"asia": "\U0001f1ef\U0001f1f5", "london": "\U0001f1ec\U0001f1e7", "ny_forex": "\U0001f4b1", "wall_st": "\U0001f3db"}
     for skey, sess in SESSIONS.items():
         sh, sc = sess["open"], sess["close"]
         label = f"{skey}_open"
