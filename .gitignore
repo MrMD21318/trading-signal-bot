@@ -217,6 +217,9 @@ __marimo__/
 
 # Cache
 **/data_cache/
+trading_bot.db
+trading_bot.db-shm
+trading_bot.db-wal
 
 # Node.js bridge for TradingView-API
 tv_bridge/node_modules/
