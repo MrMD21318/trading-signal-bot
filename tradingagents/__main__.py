@@ -35,7 +35,7 @@ def run_monitor():
     )
     from symbol_manager import get_active_symbols
     from smc_analysis import analyze_smc
-    from signal_engine import (
+    from tradingagents.signal_engine import (
         select_best_signals, calculate_multi_tp, format_professional_signal,
         check_active_signals, track_signal,
     )
