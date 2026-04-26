@@ -16,3 +16,5 @@ typing-extensions>=4.14.0
 yfinance>=0.2.63
 python-dotenv
 flask
+tvscreener
+smartmoneyconcepts
