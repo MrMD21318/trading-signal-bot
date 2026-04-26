@@ -1,11 +1,6 @@
-"""Smart Money Concepts (ICT) analysis for US100 monitor.
+"""Smart Money Concepts (ICT) analysis — proper OB, FVG, Liquidity sweep trading.
 
-Core SMC entry logic:
-1. Identify market structure (BOS = trend, CHoCH = reversal)
-2. Detect liquidity sweeps (stop hunts)
-3. Wait for return to Order Block or Fair Value Gap
-4. Enter with tight SL at swing point
-5. Target next liquidity level
+TP based on next liquidity pool, not arbitrary R:R.
 """
 
 import os
@@ -16,8 +11,6 @@ from smartmoneyconcepts import smc
 
 
 def candles_to_ohlc(candles):
-    """Convert our candle format [[time, open, high, low, close, volume], ...]
-    to SMC-expected DataFrame with lowercase columns."""
     if not candles:
         return None
     df = pd.DataFrame(candles, columns=["time", "open", "high", "low", "close", "volume"])
@@ -27,10 +20,6 @@ def candles_to_ohlc(candles):
 
 
 def analyze_smc(candles_15m, candles_5m=None, candles_1m=None):
-    """Run full SMC analysis on 15M candles (primary) and 5M/1M for entry precision.
-
-    Returns list of SMC signals.
-    """
     df = candles_to_ohlc(candles_15m)
     if df is None or len(df) < 20:
         return []
@@ -39,370 +28,355 @@ def analyze_smc(candles_15m, candles_5m=None, candles_1m=None):
     last_idx = len(df) - 1
     price = float(df["close"].iloc[-1])
 
-    # ── Swing Highs/Lows ──
+    # Swing highs/lows
     try:
         swings = smc.swing_highs_lows(df, swing_length=10)
     except:
         return []
 
-    # ── BOS / CHoCH ──
+    # BOS/CHoCH
     try:
         bc = smc.bos_choch(df, swings, close_break=True)
     except:
         return []
 
-    # ── Order Blocks ──
+    # Order Blocks
     try:
         ob = smc.ob(df, swings, close_mitigation=False)
     except:
         ob = None
 
-    # ── Fair Value Gaps ──
+    # FVG
     try:
         fvg = smc.fvg(df, join_consecutive=True)
     except:
         fvg = None
 
-    # ── Liquidity ──
+    # Liquidity
     try:
-        liq = smc.liquidity(df, swings, range_percent=0.005)
+        liq = smc.liquidity(df, swings, range_percent=0.003)
     except:
         liq = None
 
-    # ── Latest indicators ──
-    latest_swing = None
-    latest_swing_idx = 0
-    for i in range(last_idx, max(last_idx - 30, 0), -1):
-        if swings["HighLow"].iloc[i] != 0:
-            latest_swing = {
-                "type": "High" if swings["HighLow"].iloc[i] == 1 else "Low",
-                "level": swings["Level"].iloc[i],
-                "index": i,
-            }
-            latest_swing_idx = i
+    # ── Find key levels ──
+    swing_highs = []
+    swing_lows = []
+    for i in range(min(last_idx, 40)):
+        idx = last_idx - i
+        if idx < 0:
             break
+        val = swings["HighLow"].iloc[idx]
+        level = swings["Level"].iloc[idx]
+        if not pd.isna(val) and not pd.isna(level) and val != 0:
+            if int(val) == 1:
+                swing_highs.append(float(level))
+            elif int(val) == -1:
+                swing_lows.append(float(level))
 
+    # Liquidity pools
+    bullish_liq_levels = []
+    bearish_liq_levels = []
+    if liq is not None:
+        for i in range(min(last_idx, 30)):
+            idx = last_idx - i
+            if idx < 0:
+                break
+            l_val = liq["Liquidity"].iloc[idx]
+            l_level = liq["Level"].iloc[idx]
+            swept = liq["Swept"].iloc[idx]
+            if not pd.isna(l_val) and not pd.isna(l_level) and l_val != 0:
+                is_swept = not pd.isna(swept) and swept > 0
+                if int(l_val) == 1:  # bullish liquidity (equal lows)
+                    bullish_liq_levels.append({"level": float(l_level), "swept": is_swept, "idx": idx})
+                elif int(l_val) == -1:  # bearish liquidity (equal highs)
+                    bearish_liq_levels.append({"level": float(l_level), "swept": is_swept, "idx": idx})
+
+    # Recent BOS/CHoCH
     latest_bos = None
     latest_choch = None
-    for i in range(last_idx, max(last_idx - 20, 0), -1):
-        bos_val = bc["BOS"].iloc[i]
-        choch_val = bc["CHOCH"].iloc[i]
-        level_val = bc["Level"].iloc[i]
+    for i in range(min(last_idx, 20)):
+        idx = last_idx - i
+        if idx < 0:
+            break
+        bos_val = bc["BOS"].iloc[idx]
+        choch_val = bc["CHOCH"].iloc[idx]
+        level_val = bc["Level"].iloc[idx]
         if not pd.isna(bos_val) and bos_val != 0 and latest_bos is None:
-            latest_bos = {
-                "type": "Bullish" if float(bos_val) == 1 else "Bearish",
-                "level": float(level_val) if not pd.isna(level_val) else 0,
-                "index": i,
-            }
+            latest_bos = {"type": "Bullish" if int(bos_val) == 1 else "Bearish", "level": float(level_val) if not pd.isna(level_val) else 0, "idx": idx}
         if not pd.isna(choch_val) and choch_val != 0 and latest_choch is None:
-            latest_choch = {
-                "type": "Bullish" if float(choch_val) == 1 else "Bearish",
-                "level": float(level_val) if not pd.isna(level_val) else 0,
-                "index": i,
-            }
+            latest_choch = {"type": "Bullish" if int(choch_val) == 1 else "Bearish", "level": float(level_val) if not pd.isna(level_val) else 0, "idx": idx}
 
-    # ── Recent Order Block (within 15 bars) ──
+    # Recent Order Block (unmitigated, last 20 bars)
     near_ob = None
     if ob is not None:
-        for i in range(last_idx - 15, last_idx + 1):
-            if i >= 0 and ob["OB"].iloc[i] != 0:
-                near_ob = {
-                    "type": "Bullish" if ob["OB"].iloc[i] == 1 else "Bearish",
-                    "top": float(ob["Top"].iloc[i]),
-                    "bottom": float(ob["Bottom"].iloc[i]),
-                    "index": i,
-                    "strength": float(ob.get("Percentage", pd.Series([0])).iloc[i]) if "Percentage" in ob.columns else 0.5,
-                }
+        for i in range(min(last_idx, 20)):
+            idx = last_idx - i
+            if idx < 0:
+                break
+            ob_val = ob["OB"].iloc[idx]
+            ob_top = ob["Top"].iloc[idx]
+            ob_bot = ob["Bottom"].iloc[idx]
+            if not pd.isna(ob_val) and ob_val != 0 and not pd.isna(ob_top) and not pd.isna(ob_bot):
+                near_ob = {"type": "Bullish" if int(ob_val) == 1 else "Bearish", "top": float(ob_top), "bottom": float(ob_bot), "idx": idx}
+                break
 
-    # ── Recent FVG (within 10 bars, not mitigated) ──
+    # Recent FVG (unmitigated, last 15 bars)
     near_fvg = None
     if fvg is not None:
-        for i in range(last_idx - 10, last_idx + 1):
-            if i >= 0 and fvg["FVG"].iloc[i] != 0:
-                mitigated = fvg["MitigatedIndex"].iloc[i]
+        for i in range(min(last_idx, 15)):
+            idx = last_idx - i
+            if idx < 0:
+                break
+            f_val = fvg["FVG"].iloc[idx]
+            f_top = fvg["Top"].iloc[idx]
+            f_bot = fvg["Bottom"].iloc[idx]
+            mitigated = fvg["MitigatedIndex"].iloc[idx]
+            if not pd.isna(f_val) and f_val != 0 and not pd.isna(f_top) and not pd.isna(f_bot):
                 if pd.isna(mitigated) or mitigated == 0:
-                    near_fvg = {
-                        "type": "Bullish" if fvg["FVG"].iloc[i] == 1 else "Bearish",
-                        "top": float(fvg["Top"].iloc[i]),
-                        "bottom": float(fvg["Bottom"].iloc[i]),
-                        "index": i,
-                    }
+                    near_fvg = {"type": "Bullish" if int(f_val) == 1 else "Bearish", "top": float(f_top), "bottom": float(f_bot), "idx": idx}
+                    break
 
-    # ── Recent Liquidity Sweep ──
-    swept_liq = None
-    if liq is not None:
-        for i in range(last_idx - 10, last_idx + 1):
-            if i >= 0 and liq["Liquidity"].iloc[i] != 0:
-                swept_idx = liq["Swept"].iloc[i]
-                if not pd.isna(swept_idx) and swept_idx > 0:
-                    swept_liq = {
-                        "type": "Bullish" if liq["Liquidity"].iloc[i] == 1 else "Bearish",
-                        "level": float(liq["Level"].iloc[i]),
-                        "index": i,
-                    }
+    # ── TP based on liquidity pools ──
+    def find_tp_long(sl_price):
+        # Target next bearish liquidity (equal highs) or swing high
+        targets = []
+        for sh in swing_highs:
+            if sh > price:
+                targets.append(sh)
+        for bl in bearish_liq_levels:
+            if bl["level"] > price:
+                targets.append(bl["level"])
+        if targets:
+            return min(targets)
+        # Fallback: 2x risk
+        return price + (price - sl_price) * 2
 
-    # ── SIGNAL GENERATION ──
+    def find_tp_short(sl_price):
+        targets = []
+        for sl in swing_lows:
+            if sl < price:
+                targets.append(sl)
+        for bl in bullish_liq_levels:
+            if bl["level"] < price:
+                targets.append(bl["level"])
+        if targets:
+            return max(targets)
+        return price - (sl_price - price) * 2
 
-    # SIGNAL 1: CHoCH Bullish — reversal signal
-    if latest_choch and latest_choch["type"] == "Bullish" and latest_choch["index"] >= last_idx - 5:
-        choch_lvl = latest_choch.get("level", 0) or 0
-        entry = price
-        sl = float(df["low"].iloc[latest_choch["index"]:last_idx+1].min())
-        tp = entry + (entry - sl) * 2.5
-        signals.append({
-            "strategy": "SMC",
-            "setup": "CHoCH Bullish — Reversal",
-            "direction": "LONG",
-            "order_type": "Buy Limit",
-            "entry": round(entry, 1),
-            "sl": round(sl - abs(entry-sl)*0.05, 1),
-            "tp": round(tp, 1),
-            "timeframe": "15M",
-            "confidence": 0.75,
-            "reasoning": (
-                f"Change of Character detected: price broke above previous swing high"
-                + (f" at {fmt(choch_lvl)}" if choch_lvl else "")
-                + " — sellers lost control. "
-                "Market structure shifting from bearish to bullish. "
-                f"SL below recent swing low. Target 2.5R."
-            ),
-        })
+    # ── SIGNALS ──
 
-    # SIGNAL 2: CHoCH Bearish — reversal signal
-    if latest_choch and latest_choch["type"] == "Bearish" and latest_choch["index"] >= last_idx - 5:
-        choch_lvl = latest_choch.get("level", 0) or 0
-        entry = price
-        sl = float(df["high"].iloc[latest_choch["index"]:last_idx+1].max())
-        tp = entry - (sl - entry) * 2.5
-        signals.append({
-            "strategy": "SMC",
-            "setup": "CHoCH Bearish — Reversal",
-            "direction": "SHORT",
-            "order_type": "Sell Limit",
-            "entry": round(entry, 1),
-            "sl": round(sl + abs(sl-entry)*0.05, 1),
-            "tp": round(tp, 1),
-            "timeframe": "15M",
-            "confidence": 0.75,
-            "reasoning": (
-                f"Change of Character detected: price broke below previous swing low"
-                + (f" at {fmt(choch_lvl)}" if choch_lvl else "")
-                + " — buyers lost control. "
-                "Market structure shifting from bullish to bearish. "
-                f"SL above recent swing high. Target 2.5R."
-            ),
-        })
+    # 1. Liquidity Sweep LONG (bear trap)
+    swept_bearish = [l for l in bearish_liq_levels if l["swept"] and l["idx"] >= last_idx - 8]
+    if swept_bearish:
+        sweep = swept_bearish[0]
+        sweep_level = sweep["level"]
+        # Check if price reversing after sweep
+        recent_low = float(df["low"].iloc[max(0, sweep["idx"]):last_idx+1].min())
+        if price > recent_low * 1.001:
+            sl_price = recent_low - abs(price - recent_low) * 0.1
+            tp_price = find_tp_long(sl_price)
+            # Find next bullish OB for better entry
+            entry_price = price
+            entry_type = "Market"
+            if near_ob and near_ob["type"] == "Bullish" and near_ob["bottom"] <= price <= near_ob["top"]:
+                entry_price = near_ob["bottom"]
+                entry_type = "Limit at OB"
 
-    # SIGNAL 3: Liquidity Sweep + Bullish reversal
-    if swept_liq and swept_liq["type"] == "Bullish":
-        # Price swept below equal lows (stop hunt), now reversing up
-        entry = price
-        recent_low = float(df["low"].iloc[max(0, swept_liq["index"]-3):last_idx+1].min())
-        sl = recent_low - abs(price - recent_low) * 0.1
-        tp = swept_liq["level"] + abs(swept_liq["level"] - sl) * 2
-        signals.append({
-            "strategy": "SMC",
-            "setup": "Liquidity Sweep Long",
-            "direction": "LONG",
-            "order_type": "Buy Limit",
-            "entry": round(entry, 1),
-            "sl": round(sl, 1),
-            "tp": round(tp, 1),
-            "timeframe": "15M",
-            "confidence": 0.78,
-            "reasoning": (
-                f"Liquidity sweep detected below equal lows at {fmt(swept_liq['level'])}. "
-                "Smart money grabbed stop losses, now reversing. "
-                "Classic ICT setup — buy after the stop hunt. "
-                f"SL below sweep low. TP at original level."
-            ),
-        })
-
-    # SIGNAL 4: Liquidity Sweep + Bearish reversal
-    if swept_liq and swept_liq["type"] == "Bearish":
-        entry = price
-        recent_high = float(df["high"].iloc[max(0, swept_liq["index"]-3):last_idx+1].max())
-        sl = recent_high + abs(recent_high - price) * 0.1
-        tp = swept_liq["level"] - abs(sl - swept_liq["level"]) * 2
-        signals.append({
-            "strategy": "SMC",
-            "setup": "Liquidity Sweep Short",
-            "direction": "SHORT",
-            "order_type": "Sell Limit",
-            "entry": round(entry, 1),
-            "sl": round(sl, 1),
-            "tp": round(tp, 1),
-            "timeframe": "15M",
-            "confidence": 0.78,
-            "reasoning": (
-                f"Liquidity sweep detected above equal highs at {fmt(swept_liq['level'])}. "
-                "Smart money grabbed breakout trader stops, now reversing down. "
-                f"SL above sweep high. TP at original level."
-            ),
-        })
-
-    # SIGNAL 5: Price at bullish Order Block → bounce entry
-    if near_ob and near_ob["type"] == "Bullish":
-        ob_bottom = near_ob["bottom"]
-        ob_top = near_ob["top"]
-        if ob_bottom <= price <= ob_top * 1.01:
-            sl = ob_bottom - abs(ob_top - ob_bottom) * 0.5
-            tp = price + abs(price - sl) * 2
             signals.append({
-                "strategy": "SMC",
+                "strategy": "SMC", "direction": "LONG",
+                "setup": f"Liquidity Sweep + {'OB Entry' if near_ob and near_ob['type']=='Bullish' else 'Reversal'}",
+                "order_type": "Buy Limit" if entry_type.startswith("Limit") else "Buy Limit",
+                "entry": round(entry_price, 1), "sl": round(sl_price, 1),
+                "tp": round(tp_price, 1),
+                "confidence": 0.78, "timeframe": "15M",
+                "price_now": price,
+                "reasoning": (
+                    f"Bearish liquidity swept at {fmt(sweep_level)} — stop hunt complete. "
+                    f"Smart money grabbed sell-side stops, now reversing up. "
+                    + (f"Entry at bullish OB ({fmt(near_ob['bottom'])}-{fmt(near_ob['top'])}). " if near_ob and near_ob["type"] == "Bullish" else "")
+                    + f"SL below sweep low {fmt(sl_price)}. TP at next bearish liquidity {fmt(tp_price)}."
+                ),
+            })
+
+    # 2. Liquidity Sweep SHORT (bull trap)
+    swept_bullish = [l for l in bullish_liq_levels if l["swept"] and l["idx"] >= last_idx - 8]
+    if swept_bullish:
+        sweep = swept_bullish[0]
+        sweep_level = sweep["level"]
+        recent_high = float(df["high"].iloc[max(0, sweep["idx"]):last_idx+1].max())
+        if price < recent_high * 0.999:
+            sl_price = recent_high + abs(recent_high - price) * 0.1
+            tp_price = find_tp_short(sl_price)
+            entry_price = price
+            if near_ob and near_ob["type"] == "Bearish" and near_ob["bottom"] <= price <= near_ob["top"]:
+                entry_price = near_ob["top"]
+
+            signals.append({
+                "strategy": "SMC", "direction": "SHORT",
+                "setup": f"Liquidity Sweep + Reversal",
+                "order_type": "Sell Limit",
+                "entry": round(price, 1), "sl": round(sl_price, 1),
+                "tp": round(tp_price, 1),
+                "confidence": 0.78, "timeframe": "15M",
+                "price_now": price,
+                "reasoning": (
+                    f"Bullish liquidity swept at {fmt(sweep_level)} — buy-side stops grabbed. "
+                    f"Reversing down. SL above sweep high {fmt(sl_price)}. "
+                    f"TP at next bullish liquidity pool {fmt(tp_price)}."
+                ),
+            })
+
+    # 3. CHoCH Bullish — structure reversal
+    if latest_choch and latest_choch["type"] == "Bullish" and latest_choch["idx"] >= last_idx - 5:
+        recent_low = float(df["low"].iloc[max(0, latest_choch["idx"]):last_idx+1].min())
+        sl_price = recent_low - abs(price - recent_low) * 0.05
+        tp_price = find_tp_long(sl_price)
+        # Entry at FVG if available
+        entry_price = price
+        if near_fvg and near_fvg["type"] == "Bullish" and near_fvg["bottom"] <= price <= near_fvg["top"]:
+            entry_price = near_fvg["bottom"]
+        signals.append({
+            "strategy": "SMC", "direction": "LONG",
+            "setup": "CHoCH Bullish — Structure Reversal",
+            "order_type": "Buy Limit", "entry": round(entry_price, 1),
+            "sl": round(sl_price, 1), "tp": round(tp_price, 1),
+            "confidence": 0.75, "timeframe": "15M",
+            "price_now": price,
+            "reasoning": (
+                f"Change of Character: price broke above swing high — sellers lost control. "
+                + (f"Entering at bullish FVG ({fmt(near_fvg['bottom'])}-{fmt(near_fvg['top'])}). " if near_fvg and near_fvg["type"] == "Bullish" else "")
+                + f"SL below recent low {fmt(sl_price)}. TP at liquidity {fmt(tp_price)}."
+            ),
+        })
+
+    # 4. CHoCH Bearish
+    if latest_choch and latest_choch["type"] == "Bearish" and latest_choch["idx"] >= last_idx - 5:
+        recent_high = float(df["high"].iloc[max(0, latest_choch["idx"]):last_idx+1].max())
+        sl_price = recent_high + abs(recent_high - price) * 0.05
+        tp_price = find_tp_short(sl_price)
+        entry_price = price
+        if near_fvg and near_fvg["type"] == "Bearish" and near_fvg["bottom"] <= price <= near_fvg["top"]:
+            entry_price = near_fvg["top"]
+        signals.append({
+            "strategy": "SMC", "direction": "SHORT",
+            "setup": "CHoCH Bearish — Structure Reversal",
+            "order_type": "Sell Limit", "entry": round(entry_price, 1),
+            "sl": round(sl_price, 1), "tp": round(tp_price, 1),
+            "confidence": 0.75, "timeframe": "15M",
+            "price_now": price,
+            "reasoning": (
+                f"Change of Character: price broke below swing low — buyers lost control. "
+                + (f"Entering at bearish FVG. " if near_fvg and near_fvg["type"] == "Bearish" else "")
+                + f"SL above recent high {fmt(sl_price)}. TP at liquidity {fmt(tp_price)}."
+            ),
+        })
+
+    # 5. Order Block Bounce — price at institutional level
+    if near_ob:
+        if near_ob["type"] == "Bullish" and near_ob["bottom"] * 0.998 <= price <= near_ob["top"] * 1.01:
+            sl_price = near_ob["bottom"] - abs(near_ob["top"] - near_ob["bottom"]) * 0.5
+            tp_price = find_tp_long(sl_price)
+            signals.append({
+                "strategy": "SMC", "direction": "LONG",
                 "setup": "Bullish Order Block Bounce",
-                "direction": "LONG",
-                "order_type": "Buy Limit",
-                "entry": round(ob_bottom, 1),
-                "sl": round(sl, 1),
-                "tp": round(tp, 1),
-                "timeframe": "15M",
-                "confidence": 0.70,
+                "order_type": "Buy Limit", "entry": round(near_ob["bottom"], 1),
+                "sl": round(sl_price, 1), "tp": round(tp_price, 1),
+                "confidence": 0.70, "timeframe": "15M",
+                "price_now": price,
                 "reasoning": (
-                    f"Price at bullish Order Block ({fmt(ob_bottom)}—{fmt(ob_top)}). "
-                    f"Strength: {near_ob['strength']*100:.0f}%. "
-                    "Institutional buying zone — expected bounce. "
-                    "Smart money accumulating here. SL below OB."
+                    f"Price at bullish Order Block ({fmt(near_ob['bottom'])}-{fmt(near_ob['top'])}). "
+                    f"Institutional buying zone. SL below OB. TP at liquidity {fmt(tp_price)}."
                 ),
             })
-
-    # SIGNAL 6: Price at bearish Order Block → rejection entry
-    if near_ob and near_ob["type"] == "Bearish":
-        ob_bottom = near_ob["bottom"]
-        ob_top = near_ob["top"]
-        if ob_bottom * 0.99 <= price <= ob_top:
-            sl = ob_top + abs(ob_top - ob_bottom) * 0.5
-            tp = price - abs(sl - price) * 2
+        if near_ob["type"] == "Bearish" and near_ob["bottom"] * 0.99 <= price <= near_ob["top"] * 1.002:
+            sl_price = near_ob["top"] + abs(near_ob["top"] - near_ob["bottom"]) * 0.5
+            tp_price = find_tp_short(sl_price)
             signals.append({
-                "strategy": "SMC",
+                "strategy": "SMC", "direction": "SHORT",
                 "setup": "Bearish Order Block Rejection",
-                "direction": "SHORT",
-                "order_type": "Sell Limit",
-                "entry": round(ob_top, 1),
-                "sl": round(sl, 1),
-                "tp": round(tp, 1),
-                "timeframe": "15M",
-                "confidence": 0.70,
+                "order_type": "Sell Limit", "entry": round(near_ob["top"], 1),
+                "sl": round(sl_price, 1), "tp": round(tp_price, 1),
+                "confidence": 0.70, "timeframe": "15M",
+                "price_now": price,
                 "reasoning": (
-                    f"Price at bearish Order Block ({fmt(ob_bottom)}—{fmt(ob_top)}). "
-                    f"Strength: {near_ob['strength']*100:.0f}%. "
-                    "Institutional selling zone — expected rejection. "
-                    "Smart money distributing here. SL above OB."
+                    f"Price at bearish Order Block ({fmt(near_ob['bottom'])}-{fmt(near_ob['top'])}). "
+                    f"Institutional selling zone. SL above OB. TP at liquidity {fmt(tp_price)}."
                 ),
             })
 
-    # SIGNAL 7: Price returning to bullish FVG → fill the gap
-    if near_fvg and near_fvg["type"] == "Bullish":
-        fvg_bottom = near_fvg["bottom"]
-        fvg_top = near_fvg["top"]
-        if fvg_bottom <= price <= fvg_top * 1.005:
-            sl = fvg_bottom - abs(fvg_top - fvg_bottom)
-            tp = fvg_top + abs(fvg_top - fvg_bottom) * 3
+    # 6. FVG Fill — price returning to imbalance
+    if near_fvg:
+        if near_fvg["type"] == "Bullish" and near_fvg["bottom"] * 0.997 <= price <= near_fvg["top"] * 1.01:
+            sl_price = near_fvg["bottom"] - abs(near_fvg["top"] - near_fvg["bottom"])
+            tp_price = find_tp_long(sl_price)
             signals.append({
-                "strategy": "SMC",
+                "strategy": "SMC", "direction": "LONG",
                 "setup": "Bullish FVG Fill",
-                "direction": "LONG",
-                "order_type": "Buy Limit",
-                "entry": round(fvg_bottom, 1),
-                "sl": round(sl, 1),
-                "tp": round(tp, 1),
-                "timeframe": "15M",
-                "confidence": 0.68,
+                "order_type": "Buy Limit", "entry": round(near_fvg["bottom"], 1),
+                "sl": round(sl_price, 1), "tp": round(tp_price, 1),
+                "confidence": 0.68, "timeframe": "15M",
+                "price_now": price,
                 "reasoning": (
-                    f"Price returning to fill Bullish Fair Value Gap ({fmt(fvg_bottom)}—{fmt(fvg_top)}). "
-                    "Imbalance being corrected — price likely to reverse from gap. "
-                    "Entry at gap bottom. SL below gap. TP extension of move."
+                    f"Price filling bullish Fair Value Gap ({fmt(near_fvg['bottom'])}-{fmt(near_fvg['top'])}). "
+                    f"Imbalance correction — expected reversal from gap. SL below gap. TP at liquidity {fmt(tp_price)}."
                 ),
             })
-
-    # SIGNAL 8: Price returning to bearish FVG → rejection
-    if near_fvg and near_fvg["type"] == "Bearish":
-        fvg_bottom = near_fvg["bottom"]
-        fvg_top = near_fvg["top"]
-        if fvg_bottom * 0.995 <= price <= fvg_top:
-            sl = fvg_top + abs(fvg_top - fvg_bottom)
-            tp = fvg_bottom - abs(fvg_top - fvg_bottom) * 3
+        if near_fvg["type"] == "Bearish" and near_fvg["bottom"] * 0.99 <= price <= near_fvg["top"] * 1.003:
+            sl_price = near_fvg["top"] + abs(near_fvg["top"] - near_fvg["bottom"])
+            tp_price = find_tp_short(sl_price)
             signals.append({
-                "strategy": "SMC",
+                "strategy": "SMC", "direction": "SHORT",
                 "setup": "Bearish FVG Fill",
-                "direction": "SHORT",
-                "order_type": "Sell Limit",
-                "entry": round(fvg_top, 1),
-                "sl": round(sl, 1),
-                "tp": round(tp, 1),
-                "timeframe": "15M",
-                "confidence": 0.68,
+                "order_type": "Sell Limit", "entry": round(near_fvg["top"], 1),
+                "sl": round(sl_price, 1), "tp": round(tp_price, 1),
+                "confidence": 0.68, "timeframe": "15M",
+                "price_now": price,
                 "reasoning": (
-                    f"Price returning to fill Bearish Fair Value Gap ({fmt(fvg_bottom)}—{fmt(fvg_top)}). "
-                    "Imbalance being corrected — price likely to continue down from gap. "
-                    "Entry at gap top. SL above gap. TP extension of move."
+                    f"Price filling bearish Fair Value Gap ({fmt(near_fvg['bottom'])}-{fmt(near_fvg['top'])}). "
+                    f"Imbalance correction — expected continuation from gap. SL above gap. TP at liquidity {fmt(tp_price)}."
                 ),
             })
 
-    # SIGNAL 9: BOS Bullish continuation
-    if latest_bos and latest_bos["type"] == "Bullish" and latest_bos["index"] >= last_idx - 3:
-        bos_lvl = latest_bos.get("level", 0) or 0
-        entry = price
-        recent_swing_low = None
-        for i in range(last_idx, max(last_idx-20, 0), -1):
-            if swings["HighLow"].iloc[i] == -1:
-                recent_swing_low = swings["Level"].iloc[i]
-                if not pd.isna(recent_swing_low):
-                    recent_swing_low = float(recent_swing_low)
-                    break
-        if recent_swing_low:
-            signals.append({
-                "strategy": "SMC",
-                "setup": "BOS Bullish — Trend Continuation",
-                "direction": "LONG",
-                "order_type": "Buy Limit",
-                "entry": round(entry, 1),
-                "sl": round(recent_swing_low - abs(entry-recent_swing_low)*0.1, 1),
-                "tp": round(entry + abs(entry-recent_swing_low)*2, 1),
-                "timeframe": "15M",
-                "confidence": 0.72,
-                "reasoning": (
-                    f"Break of Structure (Bullish) — price broke above "
-                    + (f"{fmt(bos_lvl)}. " if bos_lvl else "resistance. ")
-                    + "Market in uptrend. Buy pullbacks. "
-                    f"SL below recent swing low at {fmt(recent_swing_low)}. "
-                    "Ride the trend higher."
-                ),
-            })
+    # 7. BOS Bullish — ride the trend
+    if latest_bos and latest_bos["type"] == "Bullish" and latest_bos["idx"] >= last_idx - 3:
+        recent_swing_low = swing_lows[0] if swing_lows else price * 0.995
+        sl_price = recent_swing_low - abs(price - recent_swing_low) * 0.1
+        tp_price = find_tp_long(sl_price)
+        signals.append({
+            "strategy": "SMC", "direction": "LONG",
+            "setup": "BOS Bullish — Trend Continuation",
+            "order_type": "Buy Limit", "entry": round(price, 1),
+            "sl": round(sl_price, 1), "tp": round(tp_price, 1),
+            "confidence": 0.72, "timeframe": "15M",
+            "price_now": price,
+            "reasoning": (
+                f"Break of Structure Bullish — market in uptrend. "
+                f"SL below swing low {fmt(sl_price)}. TP at next liquidity {fmt(tp_price)}. "
+                f"Ride the trend with the institutions."
+            ),
+        })
 
-    # SIGNAL 10: BOS Bearish continuation
-    if latest_bos and latest_bos["type"] == "Bearish" and latest_bos["index"] >= last_idx - 3:
-        bos_lvl = latest_bos.get("level", 0) or 0
-        entry = price
-        recent_swing_high = None
-        for i in range(last_idx, max(last_idx-20, 0), -1):
-            if swings["HighLow"].iloc[i] == 1:
-                recent_swing_high = swings["Level"].iloc[i]
-                if not pd.isna(recent_swing_high):
-                    recent_swing_high = float(recent_swing_high)
-                    break
-        if recent_swing_high:
-            signals.append({
-                "strategy": "SMC",
-                "setup": "BOS Bearish — Trend Continuation",
-                "direction": "SHORT",
-                "order_type": "Sell Limit",
-                "entry": round(entry, 1),
-                "sl": round(recent_swing_high + abs(recent_swing_high-entry)*0.1, 1),
-                "tp": round(entry - abs(recent_swing_high-entry)*2, 1),
-                "timeframe": "15M",
-                "confidence": 0.72,
-                "reasoning": (
-                    f"Break of Structure (Bearish) — price broke below "
-                    + (f"{fmt(bos_lvl)}. " if bos_lvl else "support. ")
-                    + "Market in downtrend. Sell rallies. "
-                    f"SL above recent swing high at {fmt(recent_swing_high)}. "
-                    "Ride the trend lower."
-                ),
-            })
+    # 8. BOS Bearish
+    if latest_bos and latest_bos["type"] == "Bearish" and latest_bos["idx"] >= last_idx - 3:
+        recent_swing_high = swing_highs[0] if swing_highs else price * 1.005
+        sl_price = recent_swing_high + abs(recent_swing_high - price) * 0.1
+        tp_price = find_tp_short(sl_price)
+        signals.append({
+            "strategy": "SMC", "direction": "SHORT",
+            "setup": "BOS Bearish — Trend Continuation",
+            "order_type": "Sell Limit", "entry": round(price, 1),
+            "sl": round(sl_price, 1), "tp": round(tp_price, 1),
+            "confidence": 0.72, "timeframe": "15M",
+            "price_now": price,
+            "reasoning": (
+                f"Break of Structure Bearish — market in downtrend. "
+                f"SL above swing high {fmt(sl_price)}. TP at next liquidity {fmt(tp_price)}. "
+                f"Ride with smart money."
+            ),
+        })
 
     return signals
 
 
 def fmt(n):
-    return f"{n:,.1f}"
+    return f"{n:,.1f}" if n and not (isinstance(n, float) and (n != n)) else "—"
