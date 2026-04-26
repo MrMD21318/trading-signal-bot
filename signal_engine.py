@@ -199,7 +199,7 @@ def select_best_signals(all_signals):
     for key, sigs in groups.items():
         sigs.sort(key=lambda x: x["score"], reverse=True)
         top = sigs[0]
-        if top["score"] < 40:  # quality threshold
+        if top["score"] < 25:  # lowered for detection sensitivity
             continue
         best.append(top)
 
