@@ -179,12 +179,31 @@ def fmt(n):
 
 # ── Sessions ────────────────────────────────────────────────
 # Session times in Asia/Amman (GMT+3)
-# Market: US equities, but we track all sessions for price action context
 SESSIONS = {
     "asia":  {"open": 1,  "close": 10, "name": "Asia/Tokyo"},
     "london":{"open": 10, "close": 18, "name": "London"},
     "ny":    {"open": 15, "close": 23, "name": "New York"},
 }
+
+# Track session START/END prices
+_session_prices = {}
+
+
+def get_current_session(hour=None):
+    """Return the active trading session name."""
+    if hour is None:
+        from datetime import datetime
+        import pytz
+        hour = datetime.now(pytz.timezone("Asia/Amman")).hour
+    for key, sess in SESSIONS.items():
+        if sess["open"] <= hour < sess["close"]:
+            return key, sess["name"]
+    return "off", "Off-Hours"
+
+
+def get_session_emoji(session_key):
+    emojis = {"asia": "\U0001f1ef\U0001f1f5", "london": "\U0001f1ec\U0001f1e7", "ny": "\U0001f1fa\U0001f1f8"}
+    return emojis.get(session_key, "\u23f0")
 
 # Nas100 CFD trades 24hrs Mon 01:01 → Fri 23:59 (Amman time)
 # Weekend: Fri 23:59 → Mon 01:01 — market closed
@@ -251,28 +270,34 @@ def check_sessions():
         _last_market_alert = None
 
     # ── Session Alerts ──
-    # Asia: 01:00-10:00 | London: 10:00-18:00 | NY: 15:00-23:00 (Amman approx)
+    emoji_map = {"asia": "\U0001f1ef\U0001f1f5", "london": "\U0001f1ec\U0001f1e7", "ny": "\U0001f1fa\U0001f1f8"}
     for skey, sess in SESSIONS.items():
         sh, sc = sess["open"], sess["close"]
         label = f"{skey}_open"
         clabel = f"{skey}_close"
+        emoji = emoji_map.get(skey, "")
 
         if h == sh and m <= 5:
             if _last_session_alerts.get(label) != now.date():
                 price = fmt(get_current_price())
+                _session_prices[skey] = {"start": price, "end": None}
                 alerts.append(
-                    f"\U0001f31e <b>{sess['name']} Session Open</b>\n"
-                    f"Nas100: <code>{price}</code>"
+                    f"{emoji} <b>{sess['name']} OPEN</b>\n"
+                    f"Price: <code>{price}</code>\n"
+                    f"<i>Session started | {sh:02d}:00-{sc:02d}:00 Amman</i>"
                 )
                 _last_session_alerts[label] = now.date()
 
         if h == sc and m >= 55:
             if _last_session_alerts.get(clabel) != now.date():
                 price = fmt(get_current_price())
+                start_price = _session_prices.get(skey, {}).get("start", "—")
                 alerts.append(
-                    f"\U0001f31a <b>{sess['name']} Session Close</b>\n"
-                    f"Nas100: <code>{price}</code>"
+                    f"{emoji} <b>{sess['name']} CLOSE</b>\n"
+                    f"Close: <code>{price}</code> | Open: <code>{start_price}</code>\n"
+                    f"<i>Session ended</i>"
                 )
+                _last_session_alerts[clabel] = now.date()
                 _last_session_alerts[clabel] = now.date()
 
     return alerts

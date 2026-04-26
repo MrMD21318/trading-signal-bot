@@ -283,6 +283,7 @@ def format_professional_signal(sig, is_new=True):
     return (
         f"{d} <b>{sig['direction']} SIGNAL</b> [{label}] {conf_stars}\n"
         f"\U0001f4b0 <b>{fmt(price_now)}</b> | "
+        f"{sig.get('session', '')} | "
         f"\U0001f4ca <b>{symbol_name}</b> | <code>{sig.get('symbol','?')}</code> | {tf}\n\n"
         f"<b>Setup:</b> {sig.get('setup','')}\n"
         f"<b>Confidence:</b> {conf:.0%} (score: {sig.get('score','?')}/100)\n\n"

@@ -37,6 +37,7 @@ def run_monitor():
     from run_us100_monitor import (
         get_candles, analyze_candles_1m, analyze_candles_5m,
         analyze_candles_15m, check_sessions, check_news,
+        get_current_session, get_session_emoji,
     )
     from symbol_manager import get_active_symbols
     from smc_analysis import analyze_smc
@@ -133,6 +134,9 @@ def _analyze_swing(candles, tf_label, symbol, sym_name):
             "reasoning": f"Price at {tf_label} support {fmt2(l)}. Buy at demand zone. SL below support. Target mid-range.",
         })
 
+    for sig in _analyze_swing(h1, "1H", symbol, sym_name):
+        signals.append(sig)
+    signals[-1]["session"] = f"{session_emoji} {session_name}"
     return signals
 
 
@@ -175,6 +179,9 @@ def run_monitor():
 
                 # Collect all signals
                 all_signals = []
+                session_key, session_name = get_current_session()
+                session_emoji = get_session_emoji(session_key)
+
                 if now - last_scan > 45:
                     m1 = get_candles(symbol, "1", 60)
                     m5 = get_candles(symbol, "5", 40)
@@ -184,36 +191,38 @@ def run_monitor():
                     if m1:
                         for sig in analyze_candles_1m(m1):
                             sig["symbol"] = symbol; sig["symbol_name"] = sym_name
-                            sig["price_now"] = m1[0][4]
+                            sig["price_now"] = m1[0][4]; sig["session"] = f"{session_emoji} {session_name}"
                             all_signals.append(sig)
                     if m5:
                         for sig in analyze_candles_5m(m5):
                             sig["symbol"] = symbol; sig["symbol_name"] = sym_name
-                            sig["price_now"] = m5[0][4]
+                            sig["price_now"] = m5[0][4]; sig["session"] = f"{session_emoji} {session_name}"
                             all_signals.append(sig)
                     if m15:
                         for sig in analyze_candles_15m(m15):
                             sig["symbol"] = symbol; sig["symbol_name"] = sym_name
-                            sig["price_now"] = m15[0][4]
+                            sig["price_now"] = m15[0][4]; sig["session"] = f"{session_emoji} {session_name}"
                             all_signals.append(sig)
                     if m15_smc:
                         for sig in analyze_smc(m15_smc, m5, m1):
                             sig["symbol"] = symbol; sig["symbol_name"] = sym_name
-                            sig["price_now"] = m15_smc[0][4]
-                            sig["strategy"] = "SMC"
+                            sig["price_now"] = m15_smc[0][4]; sig["strategy"] = "SMC"
+                            sig["session"] = f"{session_emoji} {session_name}"
                             all_signals.append(sig)
 
-                    # 1H Swing analysis
+                    # 1H Swing
                     h1 = get_candles(symbol, "60", 30)
                     if h1 and len(h1) >= 10:
-                        sigs_1h = _analyze_swing(h1, "1H", symbol, sym_name)
-                        all_signals.extend(sigs_1h)
+                        for sig in _analyze_swing(h1, "1H", symbol, sym_name):
+                            sig["session"] = f"{session_emoji} {session_name}"
+                            all_signals.append(sig)
 
-                    # 4H / Daily Swing analysis
+                    # Daily Swing
                     d1 = get_candles(symbol, "1D", 30)
                     if d1 and len(d1) >= 8:
-                        sigs_d = _analyze_swing(d1, "Daily", symbol, sym_name)
-                        all_signals.extend(sigs_d)
+                        for sig in _analyze_swing(d1, "Daily", symbol, sym_name):
+                            sig["session"] = f"{session_emoji} {session_name}"
+                            all_signals.append(sig)
 
                 if now - last_scan > 45:
                     last_scan = now
