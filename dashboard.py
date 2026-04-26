@@ -53,8 +53,44 @@ def static_files(path):
 
 # ── API ────────────────────────────────────────────────────────
 
-@app.route("/api/status")
-def api_status():
+@app.route("/api/test-signal")
+def api_test_signal():
+    """Send a test signal to all active users to verify pipeline."""
+    symbol = "CFI:US100"
+    try:
+        from run_us100_monitor import get_candles, fmt
+        m1 = get_candles(symbol, "1", 5)
+        m5 = get_candles(symbol, "5", 5)
+        price = m5[0][4] if m5 else (m1[0][4] if m1 else 0)
+        candle_count_1m = len(m1) if m1 else 0
+        candle_count_5m = len(m5) if m5 else 0
+
+        # Try sending a test message
+        TOK = os.getenv("TELEGRAM_BOT_TOKEN", "8644679098:AAF0Ag9nNOElhldvpTXXO2rHLB7dPmOtM5A")
+        from database import get_active_users_with_subs
+        users = get_active_users_with_subs()
+        sent_count = 0
+        if users and price > 0:
+            import requests as req
+            for u in users:
+                r = req.post(f"https://api.telegram.org/bot{TOK}/sendMessage", json={
+                    "chat_id": u["chat_id"],
+                    "text": f"\U0001f6e0 <b>System Test</b>\n\nPrice: <code>{fmt(price)}</code>\n1M candles: {candle_count_1m}\n5M candles: {candle_count_5m}\n\nPing from dashboard test.",
+                    "parse_mode": "HTML",
+                }, timeout=10)
+                if r.status_code == 200:
+                    sent_count += 1
+
+        return jsonify({
+            "ok": True,
+            "price": price,
+            "candles_1m": candle_count_1m,
+            "candles_5m": candle_count_5m,
+            "users_notified": sent_count,
+            "active_users": len(users),
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
     stats = get_total_stats()
     delta = datetime.now() - bot_start_time
     return jsonify({
