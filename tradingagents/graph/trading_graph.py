@@ -35,7 +35,12 @@ from tradingagents.agents.utils.agent_utils import (
     get_income_statement,
     get_news,
     get_insider_transactions,
-    get_global_news
+    get_global_news,
+    get_screener_data,
+    get_live_candles,
+    get_live_indicator,
+    get_technical_analysis,
+    search_symbol,
 )
 
 from .checkpointer import checkpoint_step, clear_checkpoint, get_checkpointer, thread_id
@@ -160,6 +165,13 @@ class TradingAgentsGraph:
                     get_stock_data,
                     # Technical indicators
                     get_indicators,
+                    # TradingView screener data
+                    get_screener_data,
+                    # TradingView real-time data
+                    get_live_candles,
+                    get_live_indicator,
+                    get_technical_analysis,
+                    search_symbol,
                 ]
             ),
             "social": ToolNode(
@@ -355,6 +367,7 @@ class TradingAgentsGraph:
             "sentiment_report": final_state["sentiment_report"],
             "news_report": final_state["news_report"],
             "fundamentals_report": final_state["fundamentals_report"],
+            "signal_report": final_state.get("signal_report", ""),
             "investment_debate_state": {
                 "bull_history": final_state["investment_debate_state"]["bull_history"],
                 "bear_history": final_state["investment_debate_state"]["bear_history"],

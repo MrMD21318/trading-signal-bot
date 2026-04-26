@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trading Signal Admin</title>
+<link rel="stylesheet" href="/static/style.css?v=2">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
+    <h2>📊 Signal Admin</h2>
+    <span>v2.0 — Coolify</span>
+  </div>
+  <nav>
+    <div class="nav-item active" data-page="dashboard">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      Dashboard
+    </div>
+    <div class="nav-item" data-page="users">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      Users
+      <span class="nav-badge" id="nav-user-count">—</span>
+    </div>
+    <div class="nav-item" data-page="alerts">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      Alerts
+      <span class="nav-badge" id="nav-alert-count">—</span>
+    </div>
+    <div class="nav-item" data-page="markets">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
+      Markets
+    </div>
+  </nav>
+</aside>
+
+<!-- Main Content -->
+<main class="main" id="main-content">
+
+<!-- DASHBOARD PAGE -->
+<div class="page active" id="page-dashboard">
+  <div class="topbar">
+    <h1><span class="status-dot"></span>Dashboard</h1>
+    <div class="ticker">
+      <span class="ticker-symbol">CFI:US100</span>
+      <span class="ticker-price" id="ticker-price">---</span>
+      <span class="ticker-change" id="ticker-change">---</span>
+    </div>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card"><div class="stat-label">Total Users</div><div class="stat-value" id="stat-users">—</div></div>
+    <div class="stat-card"><div class="stat-label">Active Users</div><div class="stat-value" id="stat-active">—</div></div>
+    <div class="stat-card"><div class="stat-label">Total Alerts Sent</div><div class="stat-value" id="stat-alerts">—</div></div>
+    <div class="stat-card"><div class="stat-label">System Uptime</div><div class="stat-value" id="stat-uptime">—</div></div>
+  </div>
+
+  <div class="chart-container">
+    <h3>CFI:US100 — Price Action (30 days)</h3>
+    <canvas id="priceChart" height="280"></canvas>
+  </div>
+
+  <div class="table-card">
+    <div class="table-header"><h3>Recent Signals</h3></div>
+    <div style="overflow-x:auto">
+    <table>
+      <thead><tr><th>Time</th><th>User</th><th>Dir</th><th>Type</th><th>Setup</th><th>Symbol</th><th>Entry</th><th>SL/TP</th><th>Conf</th></tr></thead>
+      <tbody id="dash-alerts"></tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<!-- USERS PAGE -->
+<div class="page" id="page-users">
+  <div class="topbar">
+    <h1>👥 Users</h1>
+    <div class="search-box">
+      <input type="number" id="quick-add-chatid" placeholder="Chat ID" style="width:140px">
+      <input id="quick-add-name" placeholder="Name" style="width:140px">
+      <button class="btn btn-primary btn-sm" onclick="addUserQuick()">+ Add User</button>
+    </div>
+  </div>
+  <div class="table-card">
+    <div style="overflow-x:auto">
+    <table>
+      <thead><tr><th>Chat ID</th><th>Name</th><th>Phone</th><th>Markets</th><th>Alerts</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody id="users-tbody"></tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<!-- ALERTS PAGE -->
+<div class="page" id="page-alerts">
+  <div class="topbar"><h1>🔔 Alert History</h1></div>
+  <div class="table-card">
+    <div style="overflow-x:auto">
+    <table>
+      <thead><tr><th>Time</th><th>User</th><th>Symbol</th><th>Dir</th><th>Type</th><th>Setup</th><th>Entry</th><th>SL</th><th>TP</th><th>Conf</th></tr></thead>
+      <tbody id="alerts-tbody"></tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<!-- MARKETS PAGE -->
+<div class="page" id="page-markets">
+  <div class="topbar">
+    <h1>📈 Markets</h1>
+    <div class="search-box">
+      <input id="market-search" placeholder="Search TradingView..." style="width:240px">
+      <button class="btn btn-primary btn-sm" onclick="searchMarket()">Search</button>
+    </div>
+  </div>
+  <div id="search-results" style="margin-bottom:12px"></div>
+  <div class="table-card">
+    <div style="overflow-x:auto">
+    <table>
+      <thead><tr><th>Symbol</th><th>Name</th><th>Status</th><th>Added</th><th>Actions</th></tr></thead>
+      <tbody id="markets-tbody"></tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<!-- User Edit Modal -->
+<div class="modal-overlay" id="userModal">
+  <div class="modal">
+    <h3 id="modal-user-title">Manage User</h3>
+    <div class="form-group">
+      <label>Phone Number</label>
+      <input id="modal-phone" placeholder="+962...">
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="savePhone()" style="margin-bottom:16px">Save Phone</button>
+
+    <h4 style="font-size:13px;color:var(--text2);margin-bottom:8px">Subscribed Markets</h4>
+    <div id="modal-symbols" style="margin-bottom:12px"></div>
+
+    <div class="form-group">
+      <label>Add Market</label>
+      <div class="search-box" style="margin-top:4px">
+        <input id="modal-new-symbol" placeholder="e.g. NASDAQ:AAPL" style="flex:1">
+        <button class="btn btn-primary btn-sm" onclick="addSymbolToUser()">Add</button>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn btn-ghost btn-sm" onclick="closeUserModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

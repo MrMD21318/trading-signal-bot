@@ -1,0 +1,13 @@
+{
+  "name": "tv-bridge",
+  "version": "1.0.0",
+  "description": "Node.js bridge for TradingView-API to be called from Python TradingAgents",
+  "main": "tv_bridge.mjs",
+  "type": "module",
+  "scripts": {
+    "start": "node tv_bridge.mjs"
+  },
+  "dependencies": {
+    "@mathieuc/tradingview": "^3.5.0"
+  }
+}

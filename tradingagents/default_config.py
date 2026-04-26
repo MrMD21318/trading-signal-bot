@@ -42,6 +42,8 @@ DEFAULT_CONFIG = {
         "technical_indicators": "yfinance",  # Options: alpha_vantage, yfinance
         "fundamental_data": "yfinance",      # Options: alpha_vantage, yfinance
         "news_data": "yfinance",             # Options: alpha_vantage, yfinance
+        "screener_data": "tvscreener",       # Options: tvscreener
+        "realtime_data": "tvrealtime",       # Options: tvrealtime (requires Node.js + tv_bridge)
     },
     # Tool-level configuration (takes precedence over category-level)
     "tool_vendors": {

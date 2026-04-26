@@ -226,3 +226,67 @@ def render_pm_decision(decision: PortfolioDecision) -> str:
     if decision.time_horizon:
         parts.extend(["", f"**Time Horizon**: {decision.time_horizon}"])
     return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Signal Analyst
+# ---------------------------------------------------------------------------
+
+
+class SignalDirection(str, Enum):
+    BUY = "Buy"
+    SELL = "Sell"
+    WAIT = "Wait"
+
+
+class SignalAnalysis(BaseModel):
+    """Structured entry/exit signal based on live chart and indicator analysis."""
+
+    signal: SignalDirection = Field(
+        description=(
+            "Trading signal direction. Buy for long entry, Sell for short entry, "
+            "Wait if no clear setup exists."
+        ),
+    )
+    entry_price: float = Field(
+        description="Suggested entry price in the instrument's quote currency.",
+    )
+    stop_loss: float = Field(
+        description="Stop loss price. Place below recent swing low for Buys, above swing high for Sells.",
+    )
+    take_profit: float = Field(
+        description=(
+            "Take profit target price. Use recent resistance for Buys or support for Sells, "
+            "or a risk-reward ratio of at least 1:2 relative to the stop."
+        ),
+    )
+    confidence: float = Field(
+        description="Confidence in this signal from 0.0 to 1.0, based on indicator confluence.",
+        ge=0.0,
+        le=1.0,
+    )
+    reasoning: str = Field(
+        description=(
+            "Technical reasoning: which indicators, chart patterns, support/resistance levels, "
+            "and candlestick formations support this signal. Reference specific price levels."
+        ),
+    )
+    timeframe: str = Field(
+        description="The chart timeframe this signal is based on, e.g. '1D', '60', '240'.",
+    )
+
+
+def render_signal_analysis(signal: SignalAnalysis) -> str:
+    """Render a SignalAnalysis to markdown for downstream agents and reports."""
+    parts = [
+        f"**Signal**: {signal.signal.value}",
+        "",
+        f"**Entry Price**: {signal.entry_price}",
+        f"**Stop Loss**: {signal.stop_loss}",
+        f"**Take Profit**: {signal.take_profit}",
+        f"**Confidence**: {signal.confidence:.0%}",
+        f"**Timeframe**: {signal.timeframe}",
+        "",
+        f"**Reasoning**: {signal.reasoning}",
+    ]
+    return "\n".join(parts)

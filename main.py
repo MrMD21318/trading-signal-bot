@@ -18,6 +18,8 @@ config["data_vendors"] = {
     "technical_indicators": "yfinance",      # Options: alpha_vantage, yfinance
     "fundamental_data": "yfinance",          # Options: alpha_vantage, yfinance
     "news_data": "yfinance",                 # Options: alpha_vantage, yfinance
+    "screener_data": "tvscreener",           # Options: tvscreener (TradingView screener)
+    "realtime_data": "tvrealtime",           # Options: tvrealtime (TradingView live data - requires Node.js)
 }
 
 # Initialize with custom config

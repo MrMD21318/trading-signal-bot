@@ -23,6 +23,13 @@ from .alpha_vantage import (
     get_global_news as get_alpha_vantage_global_news,
 )
 from .alpha_vantage_common import AlphaVantageRateLimitError
+from .tv_screener import get_screener_stocks
+from .tv_realtime import (
+    get_live_chart,
+    get_live_indicator,
+    get_technical_analysis,
+    search_symbol as tv_search_symbol,
+)
 
 # Configuration and routing logic
 from .config import get_config
@@ -57,12 +64,29 @@ TOOLS_CATEGORIES = {
             "get_global_news",
             "get_insider_transactions",
         ]
+    },
+    "screener_data": {
+        "description": "TradingView screener data (stock, crypto, forex screening)",
+        "tools": [
+            "get_screener_data"
+        ]
+    },
+    "realtime_data": {
+        "description": "Real-time TradingView chart candles, indicators, and technical analysis",
+        "tools": [
+            "get_live_candles",
+            "get_live_indicator",
+            "get_technical_analysis",
+            "search_symbol"
+        ]
     }
 }
 
 VENDOR_LIST = [
     "yfinance",
     "alpha_vantage",
+    "tvscreener",
+    "tvrealtime",
 ]
 
 # Mapping of methods to their vendor-specific implementations
@@ -106,6 +130,23 @@ VENDOR_METHODS = {
     "get_insider_transactions": {
         "alpha_vantage": get_alpha_vantage_insider_transactions,
         "yfinance": get_yfinance_insider_transactions,
+    },
+    # screener_data
+    "get_screener_data": {
+        "tvscreener": get_screener_stocks,
+    },
+    # realtime_data
+    "get_live_candles": {
+        "tvrealtime": get_live_chart,
+    },
+    "get_live_indicator": {
+        "tvrealtime": get_live_indicator,
+    },
+    "get_technical_analysis": {
+        "tvrealtime": get_technical_analysis,
+    },
+    "search_symbol": {
+        "tvrealtime": tv_search_symbol,
     },
 }
 

@@ -217,3 +217,7 @@ __marimo__/
 
 # Cache
 **/data_cache/
+
+# Node.js bridge for TradingView-API
+tv_bridge/node_modules/
+tv_bridge/package-lock.json

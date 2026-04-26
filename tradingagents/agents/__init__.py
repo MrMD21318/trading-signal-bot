@@ -18,6 +18,8 @@ from .managers.portfolio_manager import create_portfolio_manager
 
 from .trader.trader import create_trader
 
+from .signal_team.signal_analyst import create_signal_analyst
+
 __all__ = [
     "AgentState",
     "create_msg_delete",
@@ -35,4 +37,5 @@ __all__ = [
     "create_conservative_debator",
     "create_social_media_analyst",
     "create_trader",
+    "create_signal_analyst",
 ]

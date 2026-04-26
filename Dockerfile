@@ -1,27 +1,26 @@
-FROM python:3.12-slim AS builder
+FROM python:3.11-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+RUN apt-get update && apt-get install -y curl gnupg && \
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y nodejs && \
+    rm -rf /var/lib/apt/lists/*
 
-RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+WORKDIR /app
 
-WORKDIR /build
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir tvscreener smartmoneyconcepts flask
+
+COPY tv_bridge/package.json tv_bridge/package-lock.json* tv_bridge/
+WORKDIR /app/tv_bridge
+RUN npm install --omit=dev
+
+WORKDIR /app
 COPY . .
-RUN pip install --no-cache-dir .
 
-FROM python:3.12-slim
+ENV SMC_CREDIT=0
+ENV PYTHONUNBUFFERED=1
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+EXPOSE 5000
 
-COPY --from=builder /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-
-RUN useradd --create-home appuser
-USER appuser
-WORKDIR /home/appuser/app
-
-COPY --from=builder --chown=appuser:appuser /build .
-
-ENTRYPOINT ["tradingagents"]
+CMD ["python", "run.py"]
