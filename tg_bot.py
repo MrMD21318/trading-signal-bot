@@ -146,10 +146,12 @@ def handle_callback(cb):
     chat_id = cb["from"]["id"]
     data = cb.get("data", "")
     msg_id = cb["message"]["message_id"]
+    cb_id = cb.get("id", "")
 
     upsert_user(chat_id, cb["from"].get("first_name", ""), cb["from"].get("username", ""))
 
-    tg("answerCallbackQuery", {"callback_query_id": cb["id"]})
+    if cb_id:
+        tg("answerCallbackQuery", {"callback_query_id": cb_id})
 
     if data == "cancel":
         user_states.pop(chat_id, None)

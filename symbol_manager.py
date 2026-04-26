@@ -53,22 +53,5 @@ def toggle_symbol(symbol, active=None):
 
 
 def search_tv_symbol(query):
-    """Search TradingView for a symbol."""
-    try:
-        from tradingagents.dataflows.tv_realtime import search_symbol
-        result = search_symbol(query)
-        lines = result.strip().split("\n")
-        matches = []
-        for line in lines[1:]:  # skip header
-            if line.strip():
-                parts = line.split(",")
-                if len(parts) >= 4:
-                    matches.append({
-                        "symbol": parts[0],
-                        "description": parts[1],
-                        "type": parts[2],
-                        "exchange": parts[3],
-                    })
-        return matches[:15]
-    except Exception as e:
-        return []
+    from tv_http import search_tv
+    return search_tv(query, limit=15)
