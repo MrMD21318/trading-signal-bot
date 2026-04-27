@@ -170,32 +170,16 @@ def parse(raw):
 
 
 def get_candles(symbol, tf, count):
-    # Try TradingView bridge first
+    """Get candles from TradingView bridge ONLY. No fallback for chart data."""
     try:
         from tradingagents.dataflows.tv_realtime import get_live_chart
         raw = get_live_chart(symbol, timeframe=tf, range_bars=count)
         candles = parse(raw)
         if candles and len(candles) >= 3:
             return candles
-    except:
-        pass
-
-    # Fallback: yfinance (stocks/ETFs/indices)
-    try:
-        import yfinance as yf
-        interval_map = {"1": "1m", "5": "5m", "15": "15m", "30": "30m", "60": "1h", "240": "4h", "1D": "1d", "1W": "1wk", "1M": "1mo"}
-        period_map = {"1": "1d", "5": "5d", "15": "5d", "30": "5d", "60": "3mo", "240": "6mo", "1D": "1mo", "1W": "6mo", "1M": "2y"}
-        ticker = yf.Ticker(symbol)
-        hist = ticker.history(period=period_map.get(tf, "1mo"), interval=interval_map.get(tf, "1d"))
-        if hist is not None and not hist.empty:
-            candles = []
-            for idx, row in hist.tail(count).iterrows():
-                candles.append([int(idx.timestamp()), float(row["Open"]), float(row["High"]),
-                               float(row["Low"]), float(row["Close"]), float(row["Volume"])])
-            return candles
-    except:
-        pass
-
+        logger.warning("TV bridge returned %d candles for %s (%s)", len(candles) if candles else 0, symbol, tf)
+    except Exception as e:
+        logger.error("TV bridge failed for %s: %s", symbol, e)
     return []
 
 

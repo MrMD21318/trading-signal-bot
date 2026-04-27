@@ -11,24 +11,32 @@ logger = logging.getLogger(__name__)
 _BRIDGE_PROCESS = None
 _BRIDGE_READY = False
 _RESPONSES = {}
-_BRIDGE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "tv_bridge")
+_BRIDGE_DIR = os.environ.get("TV_BRIDGE_DIR", os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "tv_bridge"))
 
 
 def _get_bridge_process():
     global _BRIDGE_PROCESS, _BRIDGE_READY
 
     if _BRIDGE_PROCESS is not None and _BRIDGE_PROCESS.poll() is not None:
+        logger.warning("Bridge process exited with code %d, restarting", _BRIDGE_PROCESS.returncode)
         _BRIDGE_PROCESS = None
         _BRIDGE_READY = False
 
     if _BRIDGE_PROCESS is None:
-        node_exe = "node"
+        node_exe = os.environ.get("NODE_BIN", "node")
         bridge_script = os.path.join(_BRIDGE_DIR, "tv_bridge.mjs")
+
+        logger.info("Starting bridge: %s %s (cwd: %s)", node_exe, bridge_script, _BRIDGE_DIR)
 
         if not os.path.exists(bridge_script):
             raise RuntimeError(
                 f"TV bridge script not found at {bridge_script}. "
-                "Run: cd tv_bridge && npm install"
+                f"Files in tv_bridge: {os.listdir(_BRIDGE_DIR) if os.path.exists(_BRIDGE_DIR) else 'DIR NOT FOUND'}"
+            )
+
+        if not os.path.exists(os.path.join(_BRIDGE_DIR, "node_modules")):
+            raise RuntimeError(
+                f"Node modules not found in {_BRIDGE_DIR}. Run: cd tv_bridge && npm install"
             )
 
         try:
