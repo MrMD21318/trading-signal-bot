@@ -241,26 +241,26 @@ def run_monitor():
                         for sig in analyze_candles_1m(m1):
                             sig["symbol"] = symbol; sig["symbol_name"] = sym_name
                             sig["price_now"] = m1[0][4]; sig["session"] = f"{session_emoji} {session_name}"
-                            sig["trade_type"] = "SCALP"
+                            sig["trade_type"] = "SCALP"; sig["source"] = "VPS"
                             scalp_signals.append(sig)
                     if m5 and not minute_data_flat:
                         for sig in analyze_candles_5m(m5):
                             sig["symbol"] = symbol; sig["symbol_name"] = sym_name
                             sig["price_now"] = m5[0][4]; sig["session"] = f"{session_emoji} {session_name}"
-                            sig["trade_type"] = "SCALP"
+                            sig["trade_type"] = "SCALP"; sig["source"] = "VPS"
                             scalp_signals.append(sig)
                     if m15 and not minute_data_flat:
                         for sig in analyze_candles_15m(m15):
                             sig["symbol"] = symbol; sig["symbol_name"] = sym_name
                             sig["price_now"] = m15[0][4]; sig["session"] = f"{session_emoji} {session_name}"
-                            sig["trade_type"] = "SCALP"
+                            sig["trade_type"] = "SCALP"; sig["source"] = "VPS"
                             scalp_signals.append(sig)
                     if m15_smc and not minute_data_flat:
                         for sig in analyze_smc(m15_smc, "15M", m5, m1):
                             sig["symbol"] = symbol; sig["symbol_name"] = sym_name
                             sig["price_now"] = m15_smc[0][4]; sig["strategy"] = "SMC"
                             sig["session"] = f"{session_emoji} {session_name}"
-                            sig["trade_type"] = "SWING"
+                            sig["trade_type"] = "SWING"; sig["source"] = "VPS"
                             swing_signals.append(sig)
 
                     # SMC on all timeframes
@@ -278,7 +278,7 @@ def run_monitor():
                             sig["symbol"] = symbol; sig["symbol_name"] = sym_name
                             sig["price_now"] = m5[0][4]; sig["strategy"] = "SMC"
                             sig["session"] = f"{session_emoji} {session_name}"
-                            sig["trade_type"] = "SCALP"
+                            sig["trade_type"] = "SCALP"; sig["source"] = "VPS"
                             scalp_signals.append(sig)
                     # Daily always runs regardless of minute data
                     if d1 and len(d1) >= 10:
@@ -318,17 +318,17 @@ def run_monitor():
                     if h1 and len(h1) >= 10:
                         for sig in _analyze_swing(h1, "1H", symbol, sym_name):
                             sig["session"] = f"{session_emoji} {session_name}"
-                            sig["trade_type"] = "SWING"
+                            sig["trade_type"] = "SWING"; sig["source"] = "VPS"
                             swing_signals.append(sig)
                     if h4 and len(h4) >= 5:
                         for sig in _analyze_swing(h4, "4H", symbol, sym_name):
                             sig["session"] = f"{session_emoji} {session_name}"
-                            sig["trade_type"] = "SWING"
+                            sig["trade_type"] = "SWING"; sig["source"] = "VPS"
                             swing_signals.append(sig)
                     if d1 and len(d1) >= 8:
                         for sig in _analyze_swing(d1, "Daily", symbol, sym_name):
                             sig["session"] = f"{session_emoji} {session_name}"
-                            sig["trade_type"] = "SWING"
+                            sig["trade_type"] = "SWING"; sig["source"] = "VPS"
                             swing_signals.append(sig)
 
                 if now - last_scan > 45:
