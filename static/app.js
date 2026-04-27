@@ -122,20 +122,25 @@ function drawChart(canvasId, data, symbol) {
 async function loadUsers() {
   const users = await get("/users");
   const tbody = document.getElementById("users-tbody");
-  tbody.innerHTML = users.map(u => `
-    <tr>
-      <td><code>${u.chat_id}</code></td>
+    tbody.innerHTML = users.map(u => {
+    const pending = !u.active;
+    const rowStyle = pending ? 'style="background:rgba(246,70,93,0.05)"' : '';
+    const expiry = u.subscription_expiry ? u.subscription_expiry.slice(0,10) : '';
+    return `
+    <tr ${rowStyle}>
+      <td><code>${u.chat_id}</code>${pending ? ' <span class="badge-paused">PENDING</span>' : ''}</td>
       <td><strong>${u.telegram_name || u.first_name || "—"}</strong></td>
       <td>${u.phone || "—"}</td>
       <td>${(u.symbols || []).map(s => `<span class="symbol-chip">${s.symbol}</span>`).join("") || '<span style="color:var(--text2)">—</span>'}</td>
       <td>${u.alerts_received || 0}</td>
-      <td>${u.active ? '<span class="badge-active">Active</span>' : '<span class="badge-paused">Paused</span>'}</td>
+      <td>${u.active ? '<span class="badge-active">Active</span>' : '<span class="badge-paused">Paused</span>'} ${expiry ? '<span style="font-size:10px;color:var(--text2)">Exp: '+expiry+'</span>' : ''}</td>
       <td>
-        <button class="btn btn-sm btn-primary" onclick="openUserModal(${u.chat_id},'${u.telegram_name||''}')">⚙</button>
-        <button class="btn btn-sm ${u.active?'btn-ghost':'btn-success'}" onclick="toggleUser(${u.chat_id},${!u.active})">${u.active?'Pause':'Start'}</button>
+        <button class="btn btn-sm btn-primary" onclick="openUserModal(${u.chat_id},'${(u.telegram_name||'').replace(/'/g,"\\'")}')">⚙</button>
+        <button class="btn btn-sm ${u.active?'btn-ghost':'btn-success'}" onclick="toggleUser(${u.chat_id},${!u.active})">${u.active?'Pause':'▶ Start'}</button>
         <button class="btn btn-sm btn-danger" onclick="deleteUser(${u.chat_id})">×</button>
       </td>
-    </tr>`).join("") || '<tr><td colspan="7" style="text-align:center;color:var(--text2)">No users</td></tr>';
+    </tr>`
+    }).join("") || '<tr><td colspan="7" style="text-align:center;color:var(--text2)">No users</td></tr>';
 }
 
 async function addUserQuick() {
@@ -148,8 +153,10 @@ async function addUserQuick() {
 }
 
 async function toggleUser(chatId, active) {
-  await patch("/users/" + chatId, { active });
-  toast(active ? "User activated" : "User paused");
+  // If activating, ask for subscription days
+  const days = active ? (prompt("Subscription period (days)?", "30") || "30") : "0";
+  await patch("/users/" + chatId, { active, days: parseInt(days) });
+  toast(active ? ("User activated for " + days + " days") : "User paused");
   loadUsers();
 }
 
@@ -169,6 +176,7 @@ async function openUserModal(chatId, name) {
   const u = await get("/users/" + chatId);
   if (!u) return;
   document.getElementById("modal-phone").value = u.phone || "";
+  document.getElementById("modal-expiry").value = (u.subscription_expiry || "").slice(0, 10);
   // Load symbols
   const syms = await get("/users/" + chatId + "/symbols");
   document.getElementById("modal-symbols").innerHTML = syms.map(s =>
