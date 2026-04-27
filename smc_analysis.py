@@ -157,7 +157,59 @@ def analyze_smc(candles, timeframe="15M", candles_lower=None, candles_higher=Non
     # Sweep detection windows
     swept_bearish = [l for l in bearish_liq_levels if l["swept"] and l["idx"] >= last_idx - cfg["bos_lookback"]]
     swept_bullish = [l for l in bullish_liq_levels if l["swept"] and l["idx"] >= last_idx - cfg["bos_lookback"]]
-    if swept_bullish:
+
+    def find_tp_long(sl_price):
+        targets = []
+        for sh in swing_highs:
+            if sh > price:
+                targets.append(sh)
+        for bl in bearish_liq_levels:
+            if bl["level"] > price:
+                targets.append(bl["level"])
+        if targets:
+            return min(targets)
+        return price + (price - sl_price) * 2
+
+    def find_tp_short(sl_price):
+        targets = []
+        for sw in swing_lows:
+            if sw < price:
+                targets.append(sw)
+        for bl in bullish_liq_levels:
+            if bl["level"] < price:
+                targets.append(bl["level"])
+        if targets:
+            return max(targets)
+        return price - (sl_price - price) * 2
+
+    # 2. Liquidity Sweep SHORT (bull trap)
+
+    # 1. Liquidity Sweep LONG (bear trap)
+    if swept_bearish:
+        sweep = swept_bearish[0]
+        sweep_level = sweep["level"]
+        recent_low = float(df["low"].iloc[max(0, sweep["idx"]):last_idx+1].min())
+        if price > recent_low * 1.001:
+            sl_price = recent_low - abs(price - recent_low) * 0.1
+            tp_price = find_tp_long(sl_price)
+            entry_price = price
+            if near_ob and near_ob["type"] == "Bullish" and near_ob["bottom"] <= price <= near_ob["top"]:
+                entry_price = near_ob["bottom"]
+            signals.append({
+                "strategy": "SMC", "direction": "LONG",
+                "setup": f"Liquidity Sweep + {'OB Entry' if near_ob and near_ob['type']=='Bullish' else 'Reversal'}",
+                "order_type": "Buy Limit", "entry": round(entry_price, 1),
+                "sl": round(sl_price, 1), "tp": round(tp_price, 1),
+                "confidence": 0.78, "timeframe": timeframe, "price_now": price,
+                "reasoning": (
+                    f"Bearish liquidity swept at {fmt(sweep_level)} — stop hunt complete. "
+                    f"Smart money grabbed sell-side stops, now reversing up. "
+                    + (f"Entry at bullish OB ({fmt(near_ob['bottom'])}-{fmt(near_ob['top'])}). " if near_ob and near_ob["type"] == "Bullish" else "")
+                    + f"SL below sweep low {fmt(sl_price)}. TP at next liquidity {fmt(tp_price)}."
+                ),
+            })
+
+    # 2. Liquidity Sweep SHORT (bull trap)
         sweep = swept_bullish[0]
         sweep_level = sweep["level"]
         recent_high = float(df["high"].iloc[max(0, sweep["idx"]):last_idx+1].max())
