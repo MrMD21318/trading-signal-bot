@@ -126,6 +126,7 @@ def run_monitor():
         select_best_signals, calculate_multi_tp, format_professional_signal,
         check_active_signals, track_signal, get_active_signal_count,
     )
+    from tv_price import get_all_prices
     TOK = os.getenv("TELEGRAM_BOT_TOKEN", "8644679098:AAF0Ag9nNOElhldvpTXXO2rHLB7dPmOtM5A")
     DEFAULT = "CFI:US100"
 
@@ -190,6 +191,10 @@ def run_monitor():
                 target_users = get_users_for_symbol(symbol) or get_active_users_with_subs()
                 if not target_users:
                     continue
+
+                # Get live price from TradingView screener (HTTP, no WebSocket)
+                live_prices = get_all_prices(list(active_syms.keys()))
+                live_price = live_prices.get(symbol)
 
                 # Check TP/SL hits every 30s
                 if now - last_track > 30:
