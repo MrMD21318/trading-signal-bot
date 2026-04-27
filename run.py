@@ -106,9 +106,6 @@ def _analyze_swing(candles, tf_label, symbol, sym_name):
             "reasoning": f"Price at {tf_label} support {fmt2(l)}. Buy at demand zone. SL below support. Target mid-range.",
         })
 
-    for sig in _analyze_swing(h1, "1H", symbol, sym_name):
-        signals.append(sig)
-    signals[-1]["session"] = f"{session_emoji} {session_name}"
     return signals
 
 
