@@ -189,10 +189,10 @@ def select_best_signals(all_signals):
         sl = s.get("sl", 0)
         if not entry or not sl or entry <= 0 or sl <= 0:
             continue
-        # Ensure minimum SL distance (0.05% for plausible trades)
-        sl_pct = abs(entry - sl) / entry * 100
-        if sl_pct < 0.03:
-            continue
+    # Ensure minimum SL distance (0.08% for plausible trades)
+            sl_pct = abs(entry - sl) / entry * 100
+            if sl_pct < 0.05:
+                continue
         # Ensure TP is beyond entry
         if s["direction"] == "LONG" and s.get("tp", 0) <= entry:
             continue
@@ -232,12 +232,13 @@ def select_best_signals(all_signals):
             symbols[sym] = []
         symbols[sym].append(s)
 
+    # Check for conflicts (both buy and sell on same symbol) - resolve to single best
     resolved = []
     for sym, sigs in symbols.items():
         if len(sigs) == 1:
             resolved.append(sigs[0])
         else:
-            # Pick the higher-scored one
+            # Only ONE signal per symbol - pick highest scored
             sigs.sort(key=lambda x: x["score"], reverse=True)
             resolved.append(sigs[0])
 
