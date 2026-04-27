@@ -218,6 +218,10 @@ def run_monitor():
                         last_scan = now
                         continue
 
+                    # Check if minute data is flat (yfinance limitation) — if so, use only daily
+                    price_range_5m = max(c[2] for c in m5) - min(c[3] for c in m5) if m5 else 0
+                    minute_data_flat = price_range_5m < 0.5  # less than 0.5 pt range = flat
+
                     # Get trend context from daily + 4H
                     d1 = get_candles(symbol, "1D", 30)
                     h4 = get_candles(symbol, "240", 30)
@@ -228,25 +232,25 @@ def run_monitor():
                     if h4 and len(h4) >= 5:
                         h4_trend = (h4[0][4] - h4[len(h4)//2][4]) / h4[len(h4)//2][4] * 100
 
-                    if m1:
+                    if m1 and not minute_data_flat:
                         for sig in analyze_candles_1m(m1):
                             sig["symbol"] = symbol; sig["symbol_name"] = sym_name
                             sig["price_now"] = m1[0][4]; sig["session"] = f"{session_emoji} {session_name}"
                             sig["trade_type"] = "SCALP"
                             scalp_signals.append(sig)
-                    if m5:
+                    if m5 and not minute_data_flat:
                         for sig in analyze_candles_5m(m5):
                             sig["symbol"] = symbol; sig["symbol_name"] = sym_name
                             sig["price_now"] = m5[0][4]; sig["session"] = f"{session_emoji} {session_name}"
                             sig["trade_type"] = "SCALP"
                             scalp_signals.append(sig)
-                    if m15:
+                    if m15 and not minute_data_flat:
                         for sig in analyze_candles_15m(m15):
                             sig["symbol"] = symbol; sig["symbol_name"] = sym_name
                             sig["price_now"] = m15[0][4]; sig["session"] = f"{session_emoji} {session_name}"
                             sig["trade_type"] = "SCALP"
                             scalp_signals.append(sig)
-                    if m15_smc:
+                    if m15_smc and not minute_data_flat:
                         for sig in analyze_smc(m15_smc, "15M", m5, m1):
                             sig["symbol"] = symbol; sig["symbol_name"] = sym_name
                             sig["price_now"] = m15_smc[0][4]; sig["strategy"] = "SMC"
@@ -255,22 +259,31 @@ def run_monitor():
                             swing_signals.append(sig)
 
                     # SMC on all timeframes
-                    if m1 and len(m1) >= 30:
+                    if m1 and len(m1) >= 30 and not minute_data_flat:
                         for sig in analyze_smc(m1, "1M"):
                             sig["symbol"] = symbol; sig["symbol_name"] = sym_name
                             sig["price_now"] = m1[0][4]; sig["strategy"] = "SMC"
                             sig["session"] = f"{session_emoji} {session_name}"
                             sig["trade_type"] = "SCALP"
-                            sig["confidence"] = sig.get("confidence", 0.6) * 0.9  # micro SMC less reliable
+                            sig["confidence"] = sig.get("confidence", 0.6) * 0.9
                             scalp_signals.append(sig)
-                    if m5 and len(m5) >= 25:
+                    if m5 and len(m5) >= 25 and not minute_data_flat:
                         for sig in analyze_smc(m5, "5M"):
                             sig["symbol"] = symbol; sig["symbol_name"] = sym_name
                             sig["price_now"] = m5[0][4]; sig["strategy"] = "SMC"
                             sig["session"] = f"{session_emoji} {session_name}"
                             sig["trade_type"] = "SCALP"
                             scalp_signals.append(sig)
-                    if h1 and len(h1) >= 15:
+                    # Daily always runs regardless of minute data
+                    if d1 and len(d1) >= 10:
+                        for sig in analyze_smc(d1, "Daily"):
+                            sig["symbol"] = symbol; sig["symbol_name"] = sym_name
+                            sig["price_now"] = d1[0][4]; sig["strategy"] = "SMC"
+                            sig["session"] = f"{session_emoji} {session_name}"
+                            sig["trade_type"] = "SWING"
+                            sig["confidence"] = sig.get("confidence", 0.6) + 0.12
+                            swing_signals.append(sig)
+                    if h1 and len(h1) >= 15 and not minute_data_flat:
                         for sig in analyze_smc(h1, "1H"):
                             sig["symbol"] = symbol; sig["symbol_name"] = sym_name
                             sig["price_now"] = h1[0][4]; sig["strategy"] = "SMC"
