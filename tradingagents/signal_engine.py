@@ -272,54 +272,59 @@ def fmt(n):
 
 
 def format_professional_signal(sig, is_new=True):
-    """Format a professional signal with multi-TP for Telegram."""
     d = "\U0001f7e2" if sig["direction"] == "LONG" else "\U0001f534"
     strategy = sig.get("strategy", "")
     trade_type = sig.get("trade_type", "")
     if strategy == "SMC":
-        label = "\U0001f9e0 SMC"
+        label_en = "SMC"; label_ar = "\u0633\u0645\u0627\u0631\u062a \u0645\u0648\u0646\u064a"  # سمارت موني
     elif trade_type == "SWING":
-        label = "\U0001f4c8 SWING"
+        label_en = "SWING"; label_ar = "\u0633\u0648\u064a\u0646\u062c"  # سوينج
     else:
-        label = "\u26a1 SCALP"
-    tf = sig.get("timeframe", "")
+        label_en = "SCALP"; label_ar = "\u0633\u0643\u0627\u0644\u0628"  # سكالب
 
+    direction = sig["direction"]
     entry = sig["entry"]
     sl = sig["sl"]
     tp1 = sig.get("tp1", entry)
     tp2 = sig.get("tp2", entry)
     tp3 = sig.get("tp3", entry)
-
-    if sig["direction"] == "LONG":
-        risk_pct = abs(entry - sl) / entry * 100
-        rr1 = abs(tp1 - entry) / abs(entry - sl) if abs(entry - sl) > 0 else 0
-        rr2 = abs(tp2 - entry) / abs(entry - sl) if abs(entry - sl) > 0 else 0
-        rr3 = abs(tp3 - entry) / abs(entry - sl) if abs(entry - sl) > 0 else 0
-    else:
-        risk_pct = abs(sl - entry) / entry * 100
-        rr1 = abs(entry - tp1) / abs(sl - entry) if abs(sl - entry) > 0 else 0
-        rr2 = abs(entry - tp2) / abs(sl - entry) if abs(sl - entry) > 0 else 0
-        rr3 = abs(entry - tp3) / abs(sl - entry) if abs(sl - entry) > 0 else 0
-
+    tf = sig.get("timeframe", "")
     conf = sig.get("confidence", 0.7)
     conf_stars = "\u2b50" * int(conf * 5)
     price_now = sig.get("price_now", entry)
+    sym_name = sig.get("symbol_name", "") or sig.get("symbol", "")
+    sym = sig.get("symbol", "?")
+    session_str = sig.get("session", "")
+    reasoning = sig.get("reasoning", "")[:250]
+    setup_en = sig.get("setup", "")
 
-    symbol_name = sig.get("symbol_name", "") or sig.get("symbol", "")
-    source = sig.get("source", "VPS")
+    # ── Arabic translations ──
+    dir_en = direction
+    dir_ar = "\u0634\u0631\u0627\u0621" if direction == "LONG" else "\u0628\u064a\u0639"  # شراء / بيع
+    if direction == "LONG":
+        risk_pct = abs(entry - sl) / entry * 100
+        order_en = sig.get("order_type", "Buy")
+        order_ar = "\u0634\u0631\u0627\u0621 \u0645\u0639\u0644\u0642" if "Limit" in str(sig.get("order_type","")) else "\u0634\u0631\u0627\u0621 \u0645\u062a\u0648\u0642\u0641"  # شراء معلق / متوقف
+    else:
+        risk_pct = abs(sl - entry) / entry * 100
+        order_en = sig.get("order_type", "Sell")
+        order_ar = "\u0628\u064a\u0639 \u0645\u0639\u0644\u0642" if "Limit" in str(sig.get("order_type","")) else "\u0628\u064a\u0639 \u0645\u062a\u0648\u0642\u0641"
 
     return (
-        f"{d} <b>{sig['direction']} SIGNAL</b> [{label}] {conf_stars}\n"
-        f"\U0001f4b0 <b>{fmt(price_now)}</b> | "
-        f"{sig.get('session', '')} | "
-        f"\U0001f4ca <b>{symbol_name}</b> | <code>{sig.get('symbol','?')}</code> | {tf}\n\n"
-        f"<b>Setup:</b> {sig.get('setup','')}\n"
-        f"<b>Confidence:</b> {conf:.0%} (score: {sig.get('score','?')}/100)\n\n"
-        f"<b>\U0001f3af ENTRY:</b> <code>{fmt(entry)}</code>\n"
-        f"<b>\U0001f6d1 STOP:</b>  <code>{fmt(sl)}</code> ({risk_pct:.2f}% risk)\n\n"
-        f"<b>\U0001f3c6 TARGETS:</b>\n"
-        f"  TP1: <code>{fmt(tp1)}</code> (1:{rr1:.1f}R)\n"
-        f"  TP2: <code>{fmt(tp2)}</code> (1:{rr2:.1f}R)\n"
-        f"  TP3: <code>{fmt(tp3)}</code> (1:{rr3:.1f}R)\n\n"
-        f"<b>\U0001f9e0 Analysis:</b> <i>{sig.get('reasoning','')[:300]}</i>"
+        f"{d} <b>{dir_en} [{label_en}]</b> {conf_stars}\n"
+        f"\U0001f4b0 <code>{fmt(price_now)}</code> | {session_str}\n"
+        f"\U0001f4ca {sym_name} | <code>{sym}</code> | {tf}\n\n"
+        f"<b>Setup:</b> {setup_en}\n"
+        f"\U0001f3af ENTRY: <code>{fmt(entry)}</code>\n"
+        f"\U0001f6d1 SL: <code>{fmt(sl)}</code> ({risk_pct:.2f}%)\n"
+        f"\U0001f3c6 TP1: <code>{fmt(tp1)}</code> | TP2: <code>{fmt(tp2)}</code> | TP3: <code>{fmt(tp3)}</code>\n"
+        f"\U0001f9e0 <i>{reasoning}</i>\n\n"
+        f"{'─' * 20}\n"
+        f"{d} <b>\u0625\u0634\u0627\u0631\u0629 {dir_ar} [{label_ar}]</b> {conf_stars}\n"
+        f"\U0001f4b0 <code>{fmt(price_now)}</code> | {session_str}\n"
+        f"\U0001f4ca {sym_name} | <code>{sym}</code> | {tf}\n\n"
+        f"\U0001f3af \u0627\u0644\u062f\u062e\u0648\u0644: <code>{fmt(entry)}</code>\n"
+        f"\U0001f6d1 \u0648\u0642\u0641 \u0627\u0644\u062e\u0633\u0627\u0631\u0629: <code>{fmt(sl)}</code> ({risk_pct:.2f}%)\n"
+        f"\U0001f3c6 \u0627\u0644\u0647\u062f\u0641 1: <code>{fmt(tp1)}</code> | 2: <code>{fmt(tp2)}</code> | 3: <code>{fmt(tp3)}</code>\n"
+        f"\u2b50 \u0627\u0644\u062b\u0642\u0629: {conf:.0%}"
     )

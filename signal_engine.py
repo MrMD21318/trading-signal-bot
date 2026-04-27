@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
-TRACKING_FILE = os.path.join(os.path.dirname(__file__), "active_signals.json")
+TRACKING_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "active_signals.json")
 
 
 # ── Signal tracking ───────────────────────────────────────────
@@ -178,12 +178,33 @@ def score_signal(sig):
 
 
 def select_best_signals(all_signals):
-    """Select the best signal per direction per symbol. No conflicts."""
+    """Select the best signal per direction per symbol. No conflicts. Filters bad signals."""
     if not all_signals:
         return []
 
-    # Score all
+    # Filter: minimum candle quality
+    filtered = []
     for s in all_signals:
+        entry = s.get("entry", 0)
+        sl = s.get("sl", 0)
+        if not entry or not sl or entry <= 0 or sl <= 0:
+            continue
+    # Ensure minimum SL distance (0.08% for plausible trades)
+            sl_pct = abs(entry - sl) / entry * 100
+            if sl_pct < 0.05:
+                continue
+        # Ensure TP is beyond entry
+        if s["direction"] == "LONG" and s.get("tp", 0) <= entry:
+            continue
+        if s["direction"] == "SHORT" and s.get("tp", 0) >= entry:
+            continue
+        filtered.append(s)
+
+    if not filtered:
+        return []
+
+    # Score all
+    for s in filtered:
         s["score"] = score_signal(s)
 
     # Group by symbol + direction
@@ -199,8 +220,7 @@ def select_best_signals(all_signals):
     for key, sigs in groups.items():
         sigs.sort(key=lambda x: x["score"], reverse=True)
         top = sigs[0]
-        if top["score"] < 20:  # allow more signals through
-            continue
+        # Accept all signals - confidence already factored in scoring
         best.append(top)
 
     # Check for conflicts (both buy and sell on same symbol)
@@ -211,12 +231,13 @@ def select_best_signals(all_signals):
             symbols[sym] = []
         symbols[sym].append(s)
 
+    # Check for conflicts (both buy and sell on same symbol) - resolve to single best
     resolved = []
     for sym, sigs in symbols.items():
         if len(sigs) == 1:
             resolved.append(sigs[0])
         else:
-            # Pick the higher-scored one
+            # Only ONE signal per symbol - pick highest scored
             sigs.sort(key=lambda x: x["score"], reverse=True)
             resolved.append(sigs[0])
 
@@ -254,44 +275,70 @@ def format_professional_signal(sig, is_new=True):
     """Format a professional signal with multi-TP for Telegram."""
     d = "\U0001f7e2" if sig["direction"] == "LONG" else "\U0001f534"
     strategy = sig.get("strategy", "")
-    label = "SMC" if strategy == "SMC" else "TECHNICAL"
-    tf = sig.get("timeframe", "")
+    trade_type = sig.get("trade_type", "")
+    if strategy == "SMC":
+        label = "\U0001f9e0 SMC"
+    elif trade_type == "SWING":
+        label = "\U0001f4c8 SWING"
+    else:
+        label = "\u26a1 SCALP"
 
+    direction = sig["direction"]
     entry = sig["entry"]
     sl = sig["sl"]
     tp1 = sig.get("tp1", entry)
     tp2 = sig.get("tp2", entry)
     tp3 = sig.get("tp3", entry)
-
-    if sig["direction"] == "LONG":
-        risk_pct = abs(entry - sl) / entry * 100
-        rr1 = abs(tp1 - entry) / abs(entry - sl) if abs(entry - sl) > 0 else 0
-        rr2 = abs(tp2 - entry) / abs(entry - sl) if abs(entry - sl) > 0 else 0
-        rr3 = abs(tp3 - entry) / abs(entry - sl) if abs(entry - sl) > 0 else 0
-    else:
-        risk_pct = abs(sl - entry) / entry * 100
-        rr1 = abs(entry - tp1) / abs(sl - entry) if abs(sl - entry) > 0 else 0
-        rr2 = abs(entry - tp2) / abs(sl - entry) if abs(sl - entry) > 0 else 0
-        rr3 = abs(entry - tp3) / abs(sl - entry) if abs(sl - entry) > 0 else 0
-
+    tf = sig.get("timeframe", "")
     conf = sig.get("confidence", 0.7)
     conf_stars = "\u2b50" * int(conf * 5)
     price_now = sig.get("price_now", entry)
-
     symbol_name = sig.get("symbol_name", "") or sig.get("symbol", "")
+    session_str = sig.get("session", "")
+    reasoning = sig.get("reasoning", "")
+
+    # Arabic translations
+    dir_ar = "\u0634\u0631\u0627\u0621" if direction == "LONG" else "\u0628\u064a\u0639"  # شراء / بيع
+    ar_label = f"\U0001f1f8\U0001f1e6 \u0625\u0634\u0627\u0631\u0629 {dir_ar}"  # 🇸🇦 إشارة شراء/بيع
+    ar_entry = "\u0627\u0644\u062f\u062e\u0648\u0644"  # الدخول
+    ar_sl = "\u0648\u0642\u0641 \u0627\u0644\u062e\u0633\u0627\u0631\u0629"  # وقف الخسارة
+    ar_tp = "\u0627\u0644\u0647\u062f\u0641"  # الهدف
+    ar_conf = "\u0627\u0644\u062b\u0642\u0629"  # الثقة
+
+    setup_names_ar = {
+        "Liquidity Sweep": "\u0643\u0646\u0633 \u0627\u0644\u0633\u064a\u0648\u0644\u0629",
+        "CHoCH Bullish": "\u062a\u063a\u064a\u064a\u0631 \u0627\u0644\u0634\u062e\u0635\u064a\u0629 - \u0635\u0627\u0639\u062f",
+        "CHoCH Bearish": "\u062a\u063a\u064a\u064a\u0631 \u0627\u0644\u0634\u062e\u0635\u064a\u0629 - \u0647\u0627\u0628\u0637",
+        "BOS Bullish": "\u0643\u0633\u0631 \u0627\u0644\u0647\u064a\u0643\u0644 - \u0635\u0627\u0639\u062f",
+        "BOS Bearish": "\u0643\u0633\u0631 \u0627\u0644\u0647\u064a\u0643\u0644 - \u0647\u0627\u0628\u0637",
+        "Bullish Order Block": "\u0643\u062a\u0644\u0629 \u0627\u0644\u0623\u0648\u0627\u0645\u0631 - \u0635\u0627\u0639\u062f\u0629",
+        "Bearish Order Block": "\u0643\u062a\u0644\u0629 \u0627\u0644\u0623\u0648\u0627\u0645\u0631 - \u0647\u0627\u0628\u0637\u0629",
+        "Bullish FVG Fill": "\u0645\u0644\u0621 \u0641\u062c\u0648\u0629 - \u0635\u0627\u0639\u062f\u0629",
+        "Bearish FVG Fill": "\u0645\u0644\u0621 \u0641\u062c\u0648\u0629 - \u0647\u0627\u0628\u0637\u0629",
+    }
+    setup_ar = setup_names_ar.get(sig.get("setup", ""), "")
+
+    if sig["direction"] == "LONG":
+        risk_pct = abs(entry - sl) / entry * 100
+    else:
+        risk_pct = abs(sl - entry) / entry * 100
 
     return (
-        f"{d} <b>{sig['direction']} SIGNAL</b> [{label}] {conf_stars}\n"
+        f"{d} <b>{direction} SIGNAL</b> [{label}] {conf_stars}\n"
         f"\U0001f4b0 <b>{fmt(price_now)}</b> | "
-        f"{sig.get('session', '')} | "
+        f"{session_str} | "
         f"\U0001f4ca <b>{symbol_name}</b> | <code>{sig.get('symbol','?')}</code> | {tf}\n\n"
-        f"<b>Setup:</b> {sig.get('setup','')}\n"
-        f"<b>Confidence:</b> {conf:.0%} (score: {sig.get('score','?')}/100)\n\n"
+        f"<b>Setup:</b> {sig.get('setup','')}{' (' + setup_ar + ')' if setup_ar else ''}\n"
+        f"<b>Confidence:</b> {conf:.0%}\n\n"
         f"<b>\U0001f3af ENTRY:</b> <code>{fmt(entry)}</code>\n"
         f"<b>\U0001f6d1 STOP:</b>  <code>{fmt(sl)}</code> ({risk_pct:.2f}% risk)\n\n"
         f"<b>\U0001f3c6 TARGETS:</b>\n"
-        f"  TP1: <code>{fmt(tp1)}</code> (1:{rr1:.1f}R)\n"
-        f"  TP2: <code>{fmt(tp2)}</code> (1:{rr2:.1f}R)\n"
-        f"  TP3: <code>{fmt(tp3)}</code> (1:{rr3:.1f}R)\n\n"
-        f"<b>\U0001f9e0 Analysis:</b> <i>{sig.get('reasoning','')[:300]}</i>"
+        f"  TP1: <code>{fmt(tp1)}</code> | TP2: <code>{fmt(tp2)}</code> | TP3: <code>{fmt(tp3)}</code>\n\n"
+        f"\U0001f1f8\U0001f1e6 \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        f"{ar_label} {conf_stars}\n"
+        f"{ar_entry}: <code>{fmt(entry)}</code> | "
+        f"{ar_sl}: <code>{fmt(sl)}</code> | "
+        f"{ar_tp}: <code>{fmt(tp1)}</code> / <code>{fmt(tp2)}</code> / <code>{fmt(tp3)}</code>\n"
+        f"{ar_conf}: {conf:.0%}\n\n"
+        f"<b>\U0001f9e0:</b> <i>{reasoning[:250]}</i>"
     )
