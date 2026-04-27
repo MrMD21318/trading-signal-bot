@@ -169,17 +169,46 @@ def parse(raw):
     return candles
 
 
+# CFD to yfinance symbol mapping (used when TV bridge is unavailable)
+YFINANCE_MAP = {
+    "CFI:US100": "^IXIC",   # Nasdaq Composite
+    "NAS100": "^IXIC",
+    "CFI:US500": "^GSPC",   # S&P 500
+    "CFI:US30": "^DJI",     # Dow Jones
+    "CFI:GER40": "^GDAXI",  # DAX
+    "CFI:UK100": "^FTSE",   # FTSE 100
+}
+
+
 def get_candles(symbol, tf, count):
-    """Get candles from TradingView bridge ONLY. No fallback for chart data."""
+    """Get candles from TradingView bridge. Falls back to yfinance if bridge unavailable."""
+    # Try TradingView bridge first
     try:
         from tradingagents.dataflows.tv_realtime import get_live_chart
         raw = get_live_chart(symbol, timeframe=tf, range_bars=count)
         candles = parse(raw)
         if candles and len(candles) >= 3:
             return candles
-        logger.warning("TV bridge returned %d candles for %s (%s)", len(candles) if candles else 0, symbol, tf)
     except Exception as e:
-        logger.error("TV bridge failed for %s: %s", symbol, e)
+        pass
+
+    # yfinance fallback (mapped symbol for CFDs)
+    try:
+        import yfinance as yf
+        mapped = YFINANCE_MAP.get(symbol, symbol)
+        interval_map = {"1": "1m", "5": "5m", "15": "15m", "30": "30m", "60": "1h", "240": "4h", "1D": "1d", "1W": "1wk", "1M": "1mo"}
+        period_map = {"1": "1d", "5": "5d", "15": "5d", "30": "5d", "60": "3mo", "240": "6mo", "1D": "1mo", "1W": "6mo", "1M": "2y"}
+        ticker = yf.Ticker(mapped)
+        hist = ticker.history(period=period_map.get(tf, "1mo"), interval=interval_map.get(tf, "1d"))
+        if hist is not None and not hist.empty:
+            candles = []
+            for idx, row in hist.tail(count).iterrows():
+                candles.append([int(idx.timestamp()), float(row["Open"]), float(row["High"]),
+                               float(row["Low"]), float(row["Close"]), float(row["Volume"])])
+            return candles
+    except:
+        pass
+
     return []
 
 
