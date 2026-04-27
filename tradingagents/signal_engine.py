@@ -276,11 +276,11 @@ def format_professional_signal(sig, is_new=True):
     strategy = sig.get("strategy", "")
     trade_type = sig.get("trade_type", "")
     if strategy == "SMC":
-        label_en = "SMC"; label_ar = "\u0633\u0645\u0627\u0631\u062a \u0645\u0648\u0646\u064a"  # سمارت موني
+        label_en = "SMC"; label_ar = "\u0633\u0645\u0627\u0631\u062a \u0645\u0648\u0646\u064a"
     elif trade_type == "SWING":
-        label_en = "SWING"; label_ar = "\u0633\u0648\u064a\u0646\u062c"  # سوينج
+        label_en = "SWING"; label_ar = "\u0633\u0648\u064a\u0646\u062c"
     else:
-        label_en = "SCALP"; label_ar = "\u0633\u0643\u0627\u0644\u0628"  # سكالب
+        label_en = "SCALP"; label_ar = "\u0633\u0643\u0627\u0644\u0628"
 
     direction = sig["direction"]
     entry = sig["entry"]
@@ -294,37 +294,62 @@ def format_professional_signal(sig, is_new=True):
     price_now = sig.get("price_now", entry)
     sym_name = sig.get("symbol_name", "") or sig.get("symbol", "")
     sym = sig.get("symbol", "?")
-    session_str = sig.get("session", "")
-    reasoning = sig.get("reasoning", "")[:250]
+    session_str = sig.get("session", "").replace("\U0001f1f8\U0001f1e6","").strip()
     setup_en = sig.get("setup", "")
+    order_type = sig.get("order_type", "")
 
-    # ── Arabic translations ──
-    dir_en = direction
-    dir_ar = "\u0634\u0631\u0627\u0621" if direction == "LONG" else "\u0628\u064a\u0639"  # شراء / بيع
+    # ── Arabic ──
+    dir_ar = "\u0634\u0631\u0627\u0621" if direction == "LONG" else "\u0628\u064a\u0639"
     if direction == "LONG":
         risk_pct = abs(entry - sl) / entry * 100
-        order_en = sig.get("order_type", "Buy")
-        order_ar = "\u0634\u0631\u0627\u0621 \u0645\u0639\u0644\u0642" if "Limit" in str(sig.get("order_type","")) else "\u0634\u0631\u0627\u0621 \u0645\u062a\u0648\u0642\u0641"  # شراء معلق / متوقف
+        if "Stop" in order_type:
+            order_ar = "\u0623\u0645\u0631 \u0634\u0631\u0627\u0621 \u0645\u062a\u0648\u0642\u0641"
+            order_en = "Buy Stop"
+        else:
+            order_ar = "\u0623\u0645\u0631 \u0634\u0631\u0627\u0621 \u0645\u0639\u0644\u0642"
+            order_en = "Buy Limit"
     else:
         risk_pct = abs(sl - entry) / entry * 100
-        order_en = sig.get("order_type", "Sell")
-        order_ar = "\u0628\u064a\u0639 \u0645\u0639\u0644\u0642" if "Limit" in str(sig.get("order_type","")) else "\u0628\u064a\u0639 \u0645\u062a\u0648\u0642\u0641"
+        if "Stop" in order_type:
+            order_ar = "\u0623\u0645\u0631 \u0628\u064a\u0639 \u0645\u062a\u0648\u0642\u0641"
+            order_en = "Sell Stop"
+        else:
+            order_ar = "\u0623\u0645\u0631 \u0628\u064a\u0639 \u0645\u0639\u0644\u0642"
+            order_en = "Sell Limit"
+
+    # Translate reasoning key terms to Arabic
+    reasoning = sig.get("reasoning", "")[:250]
+    # Simple key term translation
+    ar_terms = {
+        "resistance": "\u0645\u0642\u0627\u0648\u0645\u0629", "support": "\u062f\u0639\u0645",
+        "breakout": "\u0627\u062e\u062a\u0631\u0627\u0642", "trend": "\u0627\u062a\u062c\u0627\u0647",
+        "buyers": "\u0645\u0634\u062a\u0631\u064a\u0646", "sellers": "\u0628\u0627\u0626\u0639\u064a\u0646",
+        "volume": "\u062d\u062c\u0645", "high": "\u0642\u0645\u0629", "low": "\u0642\u0627\u0639",
+        "liquidity": "\u0633\u064a\u0648\u0644\u0629", "sweep": "\u0643\u0646\u0633",
+        "order block": "\u0643\u062a\u0644\u0629 \u0623\u0648\u0627\u0645\u0631",
+        "reversal": "\u0627\u0646\u0639\u0643\u0627\u0633", "momentum": "\u0632\u062e\u0645",
+        "bullish": "\u0635\u0627\u0639\u062f", "bearish": "\u0647\u0627\u0628\u0637",
+    }
+    reasoning_ar = reasoning
+    for en, ar in ar_terms.items():
+        reasoning_ar = reasoning_ar.replace(en, ar)
 
     return (
-        f"{d} <b>{dir_en} [{label_en}]</b> {conf_stars}\n"
-        f"\U0001f4b0 <code>{fmt(price_now)}</code> | {session_str}\n"
-        f"\U0001f4ca {sym_name} | <code>{sym}</code> | {tf}\n\n"
-        f"<b>Setup:</b> {setup_en}\n"
-        f"\U0001f3af ENTRY: <code>{fmt(entry)}</code>\n"
-        f"\U0001f6d1 SL: <code>{fmt(sl)}</code> ({risk_pct:.2f}%)\n"
-        f"\U0001f3c6 TP1: <code>{fmt(tp1)}</code> | TP2: <code>{fmt(tp2)}</code> | TP3: <code>{fmt(tp3)}</code>\n"
-        f"\U0001f9e0 <i>{reasoning}</i>\n\n"
-        f"{'─' * 20}\n"
-        f"{d} <b>\u0625\u0634\u0627\u0631\u0629 {dir_ar} [{label_ar}]</b> {conf_stars}\n"
+        f"{d} <b>{dir_ar} | {label_ar} | {order_ar}</b> {conf_stars}\n"
         f"\U0001f4b0 <code>{fmt(price_now)}</code> | {session_str}\n"
         f"\U0001f4ca {sym_name} | <code>{sym}</code> | {tf}\n\n"
         f"\U0001f3af \u0627\u0644\u062f\u062e\u0648\u0644: <code>{fmt(entry)}</code>\n"
         f"\U0001f6d1 \u0648\u0642\u0641 \u0627\u0644\u062e\u0633\u0627\u0631\u0629: <code>{fmt(sl)}</code> ({risk_pct:.2f}%)\n"
-        f"\U0001f3c6 \u0627\u0644\u0647\u062f\u0641 1: <code>{fmt(tp1)}</code> | 2: <code>{fmt(tp2)}</code> | 3: <code>{fmt(tp3)}</code>\n"
-        f"\u2b50 \u0627\u0644\u062b\u0642\u0629: {conf:.0%}"
+        f"\U0001f3c6 \u0627\u0644\u0623\u0647\u062f\u0627\u0641: <code>{fmt(tp1)}</code> | <code>{fmt(tp2)}</code> | <code>{fmt(tp3)}</code>\n"
+        f"\u2b50 \u0627\u0644\u062b\u0642\u0629: {conf:.0%}\n\n"
+        f"\U0001f9e0 <i>{reasoning_ar}</i>\n\n"
+        f"{'─' * 20}\n"
+        f"{d} <b>{direction} | {label_en} | {order_en}</b> {conf_stars}\n"
+        f"\U0001f4b0 <code>{fmt(price_now)}</code> | {session_str}\n"
+        f"\U0001f4ca {sym_name} | <code>{sym}</code> | {tf}\n\n"
+        f"\U0001f3af ENTRY: <code>{fmt(entry)}</code>\n"
+        f"\U0001f6d1 SL: <code>{fmt(sl)}</code> ({risk_pct:.2f}%)\n"
+        f"\U0001f3c6 TARGETS: <code>{fmt(tp1)}</code> | <code>{fmt(tp2)}</code> | <code>{fmt(tp3)}</code>\n"
+        f"\u2b50 Confidence: {conf:.0%}\n\n"
+        f"\U0001f9e0 <i>{reasoning}</i>"
     )
