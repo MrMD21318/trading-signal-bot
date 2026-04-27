@@ -32,34 +32,6 @@ def run_bot_poller():
     poll_updates()
 
 
-def run_monitor():
-    import pytz
-    from run_us100_monitor import (
-        get_candles, analyze_candles_1m, analyze_candles_5m,
-        analyze_candles_15m, check_sessions, check_news,
-        get_current_session, get_session_emoji,
-    )
-    from symbol_manager import get_active_symbols
-    from smc_analysis import analyze_smc
-    from signal_engine import (
-        select_best_signals, calculate_multi_tp, format_professional_signal,
-        check_active_signals, track_signal,
-    )
-
-    TOK = os.getenv("TELEGRAM_BOT_TOKEN", "8644679098:AAF0Ag9nNOElhldvpTXXO2rHLB7dPmOtM5A")
-    TZ = pytz.timezone("Asia/Amman")
-    DEFAULT = "CFI:US100"
-
-    def tg_send(token, chat_id, text):
-        import requests
-        try:
-            requests.post(f"https://api.telegram.org/bot{token}/sendMessage",
-                         json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"}, timeout=10)
-        except:
-            pass
-
-    logger.info("Professional Signal Engine started")
-    time.sleep(3)
 
 
 def _analyze_swing(candles, tf_label, symbol, sym_name):
@@ -146,6 +118,17 @@ def fmt2(n):
 
 def run_monitor():
     import pytz
+    from run_us100_monitor import (
+        get_candles, analyze_candles_1m, analyze_candles_5m,
+        analyze_candles_15m, check_sessions, check_news,
+        get_current_session, get_session_emoji,
+    )
+    from symbol_manager import get_active_symbols
+    from smc_analysis import analyze_smc
+    from signal_engine import (
+        select_best_signals, calculate_multi_tp, format_professional_signal,
+        check_active_signals, track_signal,
+    )
     TOK = os.getenv("TELEGRAM_BOT_TOKEN", "8644679098:AAF0Ag9nNOElhldvpTXXO2rHLB7dPmOtM5A")
     DEFAULT = "CFI:US100"
 
@@ -156,6 +139,9 @@ def run_monitor():
                          json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"}, timeout=10)
         except:
             pass
+
+    logger.info("Professional Signal Engine started")
+    time.sleep(3)
 
     active_users = get_active_users_with_subs()
     if active_users:
