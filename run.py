@@ -264,6 +264,7 @@ def run_monitor():
                             swing_signals.append(sig)
 
                     # SMC on all timeframes
+                    h1 = get_candles(symbol, "60", 30)
                     if m1 and len(m1) >= 30 and not minute_data_flat:
                         for sig in analyze_smc(m1, "1M"):
                             sig["symbol"] = symbol; sig["symbol_name"] = sym_name
