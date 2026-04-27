@@ -276,7 +276,13 @@ def format_professional_signal(sig, is_new=True):
     """Format a professional signal with multi-TP for Telegram."""
     d = "\U0001f7e2" if sig["direction"] == "LONG" else "\U0001f534"
     strategy = sig.get("strategy", "")
-    label = "SMC" if strategy == "SMC" else "TECHNICAL"
+    trade_type = sig.get("trade_type", "")
+    if strategy == "SMC":
+        label = "\U0001f9e0 SMC"
+    elif trade_type == "SWING":
+        label = "\U0001f4c8 SWING"
+    else:
+        label = "\u26a1 SCALP"
     tf = sig.get("timeframe", "")
 
     entry = sig["entry"]

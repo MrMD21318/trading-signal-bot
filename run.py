@@ -181,8 +181,12 @@ def run_monitor():
                             for u in target_users:
                                 tg_send(TOK, u["chat_id"], a)
 
-                # Collect all signals
-                all_signals = []
+                # Collect SCALP signals (1M, 5M, 15M)
+                scalp_signals = []
+                # Collect SWING signals (15M, 1H, 4H, Daily)
+                swing_signals = []
+
+                if now - last_scan > 45:
                 session_key, session_name = get_current_session()
                 session_emoji = get_session_emoji(session_key)
 
@@ -197,55 +201,92 @@ def run_monitor():
                         last_scan = now
                         continue
 
+                    # Get trend context from daily + 4H
+                    d1 = get_candles(symbol, "1D", 30)
+                    h4 = get_candles(symbol, "240", 30)
+                    daily_trend = 0
+                    if d1 and len(d1) >= 5:
+                        daily_trend = (d1[0][4] - d1[len(d1)//2][4]) / d1[len(d1)//2][4] * 100
+                    h4_trend = 0
+                    if h4 and len(h4) >= 5:
+                        h4_trend = (h4[0][4] - h4[len(h4)//2][4]) / h4[len(h4)//2][4] * 100
+
                     if m1:
                         for sig in analyze_candles_1m(m1):
                             sig["symbol"] = symbol; sig["symbol_name"] = sym_name
                             sig["price_now"] = m1[0][4]; sig["session"] = f"{session_emoji} {session_name}"
-                            all_signals.append(sig)
+                            sig["trade_type"] = "SCALP"
+                            scalp_signals.append(sig)
                     if m5:
                         for sig in analyze_candles_5m(m5):
                             sig["symbol"] = symbol; sig["symbol_name"] = sym_name
                             sig["price_now"] = m5[0][4]; sig["session"] = f"{session_emoji} {session_name}"
-                            all_signals.append(sig)
+                            sig["trade_type"] = "SCALP"
+                            scalp_signals.append(sig)
                     if m15:
                         for sig in analyze_candles_15m(m15):
                             sig["symbol"] = symbol; sig["symbol_name"] = sym_name
                             sig["price_now"] = m15[0][4]; sig["session"] = f"{session_emoji} {session_name}"
-                            all_signals.append(sig)
+                            sig["trade_type"] = "SCALP"
+                            scalp_signals.append(sig)
                     if m15_smc:
                         for sig in analyze_smc(m15_smc, m5, m1):
                             sig["symbol"] = symbol; sig["symbol_name"] = sym_name
                             sig["price_now"] = m15_smc[0][4]; sig["strategy"] = "SMC"
                             sig["session"] = f"{session_emoji} {session_name}"
-                            all_signals.append(sig)
+                            sig["trade_type"] = "SWING"  # SMC is swing
+                            swing_signals.append(sig)
 
-                    # 1H Swing
-                    h1 = get_candles(symbol, "60", 30)
+                    # 1H + 4H + Daily Swing analysis
                     if h1 and len(h1) >= 10:
                         for sig in _analyze_swing(h1, "1H", symbol, sym_name):
                             sig["session"] = f"{session_emoji} {session_name}"
-                            all_signals.append(sig)
-
-                    # Daily Swing
-                    d1 = get_candles(symbol, "1D", 30)
+                            sig["trade_type"] = "SWING"
+                            swing_signals.append(sig)
+                    if h4 and len(h4) >= 5:
+                        for sig in _analyze_swing(h4, "4H", symbol, sym_name):
+                            sig["session"] = f"{session_emoji} {session_name}"
+                            sig["trade_type"] = "SWING"
+                            swing_signals.append(sig)
                     if d1 and len(d1) >= 8:
                         for sig in _analyze_swing(d1, "Daily", symbol, sym_name):
                             sig["session"] = f"{session_emoji} {session_name}"
-                            all_signals.append(sig)
+                            sig["trade_type"] = "SWING"
+                            swing_signals.append(sig)
 
                 if now - last_scan > 45:
                     last_scan = now
                 if now - last_track > 30:
                     last_track = now
 
-                # Filter: only best signals, no conflicts
-                best = select_best_signals(all_signals)
+                # Trend filter: if daily is up, prefer LONG scalps. If down, prefer SHORT.
+                # Only send signals that align with the higher timeframe trend
+                trend_aligned_scalp = []
+                for s in scalp_signals:
+                    if daily_trend > 0.2 and s["direction"] == "LONG":
+                        s["confidence"] = min(0.9, s.get("confidence", 0.6) + 0.05)
+                        s["reasoning"] = f"[TREND ALIGNED: Daily +{daily_trend:.1f}%] " + s.get("reasoning", "")
+                        trend_aligned_scalp.append(s)
+                    elif daily_trend < -0.2 and s["direction"] == "SHORT":
+                        s["confidence"] = min(0.9, s.get("confidence", 0.6) + 0.05)
+                        s["reasoning"] = f"[TREND ALIGNED: Daily {daily_trend:.1f}%] " + s.get("reasoning", "")
+                        trend_aligned_scalp.append(s)
+                    else:
+                        # Counter-trend still allowed but at lower confidence
+                        s["confidence"] = max(0.3, s.get("confidence", 0.6) - 0.15)
+                        trend_aligned_scalp.append(s)
+
+                # Select best scalp + best swing
+                best_scalp = select_best_signals(trend_aligned_scalp)
+                best_swing = select_best_signals(swing_signals)
+                best = best_scalp + best_swing  # Send both, but max 1 scalp + 1 swing per cycle
 
                 for sig in best:
-                    # Enforce minimum SL distance: 0.12% of entry for indices, 0.2% for others
+                    # Enforce minimum SL distance: 0.05% for scalp, 0.15% for swing
                     entry = sig["entry"]
                     sl = sig["sl"]
-                    min_sl_pct = 0.0012  # 0.12% minimum
+                    is_swing = sig.get("trade_type") == "SWING" or sig.get("strategy") == "SMC"
+                    min_sl_pct = 0.0015 if is_swing else 0.0005
                     current_sl_dist = abs(entry - sl)
                     min_sl_dist = entry * min_sl_pct
                     if current_sl_dist < min_sl_dist and sig["direction"] == "LONG":
