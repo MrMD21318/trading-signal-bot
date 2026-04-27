@@ -152,17 +152,18 @@
     </div>
 
     <h4 style="font-size:13px;color:var(--text2);margin-bottom:8px">Subscribed Markets</h4>
-    <div id="modal-symbols" style="margin-bottom:12px"></div>
+    <div id="modal-symbols" style="margin-bottom:12px;max-height:250px;overflow-y:auto"></div>
 
     <div class="form-group">
-      <label>Add Market</label>
+      <label>Add Custom Symbol</label>
       <div class="search-box" style="margin-top:4px">
-        <input id="modal-new-symbol" placeholder="e.g. NASDAQ:AAPL" style="flex:1">
+        <input id="modal-new-symbol" placeholder="e.g. CFI:US100" style="flex:1">
         <button class="btn btn-primary btn-sm" onclick="addSymbolToUser()">Add</button>
       </div>
     </div>
 
     <div class="actions">
+      <button class="btn btn-success btn-sm" onclick="saveMarkets()">Save & Assign</button>
       <button class="btn btn-ghost btn-sm" onclick="closeUserModal()">Close</button>
     </div>
   </div>

@@ -201,6 +201,26 @@ def api_user_syms(chat_id):
     if request.method == "GET":
         return jsonify(get_user_symbols(chat_id))
     data = request.get_json()
+    symbols_list = data.get("symbols", [])  # bulk: [{"symbol":"CFI:US100","symbol_name":"Nasdaq"},...]
+    if symbols_list:
+        # Bulk assign — replace all existing
+        conn = __import__("database").get_conn()
+        conn.execute("DELETE FROM user_symbols WHERE chat_id=?", (chat_id,))
+        conn.commit()
+        for s in symbols_list:
+            add_user_symbol(chat_id, s.get("symbol", ""), s.get("symbol_name", ""))
+        conn.close()
+        # Notify user
+        syms_str = ", ".join(s["symbol"] for s in symbols_list)
+        TOK = os.getenv("TELEGRAM_BOT_TOKEN", "8644679098:AAF0Ag9nNOElhldvpTXXO2rHLB7dPmOtM5A")
+        import requests as req
+        req.post(f"https://api.telegram.org/bot{TOK}/sendMessage", json={
+            "chat_id": chat_id,
+            "text": f"\U0001f4cb <b>Markets Assigned</b>\n\n<code>{syms_str}</code>\n\nYou will receive signals for these markets.",
+            "parse_mode": "HTML",
+        }, timeout=10)
+        return jsonify({"ok": True})
+    # Single symbol add
     add_user_symbol(chat_id, data["symbol"], data.get("symbol_name", ""))
     return jsonify({"ok": True})
 

@@ -177,11 +177,22 @@ async function openUserModal(chatId, name) {
   if (!u) return;
   document.getElementById("modal-phone").value = u.phone || "";
   document.getElementById("modal-expiry").value = (u.subscription_expiry || "").slice(0, 10);
-  // Load symbols
-  const syms = await get("/users/" + chatId + "/symbols");
-  document.getElementById("modal-symbols").innerHTML = syms.map(s =>
-    `<span class="symbol-chip">${s.symbol}<button onclick="removeSymbol('${chatId}','${s.symbol}')">×</button></span>`
-  ).join("") || '<span style="color:var(--text2);font-size:12px">No markets assigned</span>';
+
+  // Load user's current symbols
+  const userSyms = await get("/users/" + chatId + "/symbols");
+  const userSymSet = new Set(userSyms.map(s => s.symbol));
+
+  // Load all available symbols
+  const allSymbols = await get("/symbols");
+  const modalSymsDiv = document.getElementById("modal-symbols");
+  modalSymsDiv.innerHTML = Object.entries(allSymbols).map(([sym, info]) => {
+    const checked = userSymSet.has(sym) ? "checked" : "";
+    return `<label style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer">
+      <input type="checkbox" value="${sym}" ${checked} onchange="dirty=true">
+      <code>${sym}</code> <span style="color:var(--text2);font-size:11px">${info.name||''}</span>
+    </label>`;
+  }).join("") || '<span style="color:var(--text2)">No markets available. Add some first.</span>';
+
   document.getElementById("userModal").classList.add("show");
 }
 
@@ -193,6 +204,18 @@ async function addSymbolToUser() {
   await post("/users/" + userModalId + "/symbols", { symbol: sym, symbol_name: sym });
   toast("Market added");
   openUserModal(userModalId, "");
+}
+
+async function saveMarkets() {
+  const checks = document.querySelectorAll("#modal-symbols input[type=checkbox]");
+  const symbols = [];
+  checks.forEach(cb => {
+    if (cb.checked) symbols.push({ symbol: cb.value, symbol_name: cb.value });
+  });
+  await post("/users/" + userModalId + "/symbols", { symbols });
+  toast("Markets saved — user notified");
+  closeUserModal();
+  loadUsers();
 }
 
 async function removeSymbol(chatId, sym) {
