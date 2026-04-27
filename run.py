@@ -124,7 +124,7 @@ def run_monitor():
     from smc_analysis import analyze_smc
     from signal_engine import (
         select_best_signals, calculate_multi_tp, format_professional_signal,
-        check_active_signals, track_signal,
+        check_active_signals, track_signal, get_active_signal_count,
     )
     TOK = os.getenv("TELEGRAM_BOT_TOKEN", "8644679098:AAF0Ag9nNOElhldvpTXXO2rHLB7dPmOtM5A")
     DEFAULT = "CFI:US100"
