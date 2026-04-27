@@ -53,6 +53,22 @@ def static_files(path):
 
 # ── API ────────────────────────────────────────────────────────
 
+@app.route("/api/debug")
+def api_debug():
+    """Show current monitoring state."""
+    from run_us100_monitor import get_candles
+    syms = list(get_active_symbols().keys()) if get_active_symbols() else ["CFI:US100"]
+    result = {"active_symbols": syms, "candles": {}}
+    for sym in syms[:3]:
+        for tf in ["5", "15", "1D"]:
+            c = get_candles(sym, tf, 5)
+            last = c[0][4] if c else 0
+            result["candles"][f"{sym}_{tf}"] = {"count": len(c), "price": last}
+    from database import get_total_stats
+    result["stats"] = get_total_stats()
+    return jsonify(result)
+
+
 @app.route("/api/test-signal")
 def api_test_signal():
     """Send a test signal to verify pipeline."""

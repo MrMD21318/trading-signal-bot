@@ -140,7 +140,16 @@ def run_monitor():
     logger.info("Professional Signal Engine started")
     time.sleep(3)
 
+    def log_status():
+        # Debug: check candles working
+        for sym in get_active_symbols():
+            c = get_candles(sym, "5", 5)
+            logger.info("DEBUG: %s 5M candles=%d", sym, len(c))
+            if c:
+                logger.info("DEBUG: %s last close=%s", sym, fmt2(c[0][4]))
+
     active_users = get_active_users_with_subs()
+    log_status()
     if active_users:
         for u in active_users[:5]:
             tg_send(TOK, u["chat_id"],
