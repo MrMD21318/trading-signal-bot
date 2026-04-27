@@ -255,7 +255,7 @@ def run_monitor():
 
                     # Dedup: don't send same symbol+direction within 10 minutes
                     dedup_key = f"{symbol}_{sig['direction']}_{sig['setup']}"
-                    if dedup_key in sent_signals and now - sent_signals[dedup_key] < 600:
+                    if dedup_key in sent_signals and now - sent_signals[dedup_key] < 900:
                         continue
                     sent_signals[dedup_key] = now
                     # Clean old entries
@@ -276,9 +276,11 @@ def run_monitor():
                                  sig["entry"], sig["sl"], tp2, sig.get("strategy", ""),
                                  sig.get("timeframe", ""), sig.get("confidence", 0))
 
-                    track_signal(symbol, sig["direction"], sig["entry"], sig["sl"],
-                                tp1, tp2, tp3, sig["setup"], sig.get("timeframe", ""),
-                                sig.get("confidence", 0))
+                    # Only track signals that have reasonable SL (avoid tracking noise)
+                    if abs(sig["tp2"] - sig["entry"]) > abs(sig["sl"] - sig["entry"]) * 1.5:
+                        track_signal(symbol, sig["direction"], sig["entry"], sig["sl"],
+                                    tp1, tp2, tp3, sig["setup"], sig.get("timeframe", ""),
+                                    sig.get("confidence", 0))
                     time.sleep(1.2)
 
             # Sessions & news
