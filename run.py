@@ -183,10 +183,7 @@ def run_monitor():
 
                 # Collect SCALP signals (1M, 5M, 15M)
                 scalp_signals = []
-                # Collect SWING signals (15M, 1H, 4H, Daily)
                 swing_signals = []
-
-                if now - last_scan > 45:
                 session_key, session_name = get_current_session()
                 session_emoji = get_session_emoji(session_key)
 
