@@ -57,6 +57,7 @@ def static_files(path):
 def api_debug():
     """Show current monitoring state."""
     from run_us100_monitor import get_candles
+    from symbol_manager import get_active_symbols
     syms = list(get_active_symbols().keys()) if get_active_symbols() else ["CFI:US100"]
     result = {"active_symbols": syms, "candles": {}}
     for sym in syms[:3]:
@@ -67,6 +68,18 @@ def api_debug():
     from database import get_total_stats
     result["stats"] = get_total_stats()
     return jsonify(result)
+
+
+@app.route("/api/status")
+def api_status():
+    stats = get_total_stats()
+    delta = datetime.now() - bot_start_time
+    return jsonify({
+        "running": True,
+        "uptime_seconds": int(delta.total_seconds()),
+        "started_at": bot_start_time.isoformat(),
+        **stats,
+    })
 
 
 @app.route("/api/test-signal")
