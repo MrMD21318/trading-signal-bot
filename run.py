@@ -242,6 +242,17 @@ def run_monitor():
                 best = select_best_signals(all_signals)
 
                 for sig in best:
+                    # Enforce minimum SL distance: 0.12% of entry for indices, 0.2% for others
+                    entry = sig["entry"]
+                    sl = sig["sl"]
+                    min_sl_pct = 0.0012  # 0.12% minimum
+                    current_sl_dist = abs(entry - sl)
+                    min_sl_dist = entry * min_sl_pct
+                    if current_sl_dist < min_sl_dist and sig["direction"] == "LONG":
+                        sig["sl"] = round(entry - min_sl_dist, 1)
+                    elif current_sl_dist < min_sl_dist and sig["direction"] == "SHORT":
+                        sig["sl"] = round(entry + min_sl_dist, 1)
+
                     # Dedup: don't send same symbol+direction within 10 minutes
                     dedup_key = f"{symbol}_{sig['direction']}_{sig['setup']}"
                     if dedup_key in sent_signals and now - sent_signals[dedup_key] < 600:
