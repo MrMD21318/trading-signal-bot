@@ -140,6 +140,26 @@ def run_monitor():
     logger.info("Professional Signal Engine started")
     time.sleep(3)
 
+    # Force a test signal to verify pipeline
+    for sym in get_active_symbols():
+        c = get_candles(sym, "5", 10)
+        if c and len(c) >= 3:
+            price_now = c[0][4]
+            daily_c = get_candles(sym, "1D", 10)
+            d_trend = 0
+            if daily_c and len(daily_c) >= 5:
+                d_trend = (daily_c[0][4] - daily_c[len(daily_c)//2][4]) / daily_c[len(daily_c)//2][4] * 100
+            logger.info("BOOT TEST: %s price=%.1f trend=%+.1f%% candles_5m=%d candles_1d=%d",
+                       sym, price_now, d_trend, len(c), len(daily_c) if daily_c else 0)
+            # Send a boot notification to users
+            for u in get_active_users_with_subs():
+                tg_send(TOK, u["chat_id"],
+                    f"\U0001f514 <b>Monitor Booted</b>\n\n"
+                    f"Symbol: {sym}\nPrice: <code>{price_now:,.1f}</code>\n"
+                    f"Daily trend: {d_trend:+.1f}%\n5M candles: {len(c)}\n\n"
+                    f"Scanning every 45s — first signal coming soon.")
+            break
+
     def log_status():
         # Debug: check candles working
         for sym in get_active_symbols():

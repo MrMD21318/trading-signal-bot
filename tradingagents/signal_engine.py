@@ -220,8 +220,7 @@ def select_best_signals(all_signals):
     for key, sigs in groups.items():
         sigs.sort(key=lambda x: x["score"], reverse=True)
         top = sigs[0]
-        if top["score"] < 20:  # allow more signals through
-            continue
+        # Accept all signals - confidence already factored in scoring
         best.append(top)
 
     # Check for conflicts (both buy and sell on same symbol)
