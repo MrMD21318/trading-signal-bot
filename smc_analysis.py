@@ -19,9 +19,27 @@ def candles_to_ohlc(candles):
     return df[["open", "high", "low", "close", "volume"]]
 
 
-def analyze_smc(candles_15m, candles_5m=None, candles_1m=None):
-    df = candles_to_ohlc(candles_15m)
-    if df is None or len(df) < 20:
+def analyze_smc(candles, timeframe="15M", candles_lower=None, candles_higher=None):
+    """SMC analysis on any timeframe with adaptive parameters.
+
+    Timeframe affects swing_length, liquidity range, and min candles.
+    """
+    df = candles_to_ohlc(candles)
+    if df is None:
+        return []
+
+    # Adaptive parameters per timeframe
+    tf_config = {
+        "1M":  {"swing_length": 8, "liq_range": 0.0003, "min_candles": 30, "bos_lookback": 15, "fvg_lookback": 10, "ob_lookback": 12, "liq_lookback": 20},
+        "5M":  {"swing_length": 8, "liq_range": 0.0005, "min_candles": 25, "bos_lookback": 12, "fvg_lookback": 8,  "ob_lookback": 10, "liq_lookback": 18},
+        "15M": {"swing_length": 10,"liq_range": 0.001,  "min_candles": 20, "bos_lookback": 10, "fvg_lookback": 8,  "ob_lookback": 10, "liq_lookback": 15},
+        "1H":  {"swing_length": 12,"liq_range": 0.002,  "min_candles": 15, "bos_lookback": 8,  "fvg_lookback": 5,  "ob_lookback": 8,  "liq_lookback": 12},
+        "4H":  {"swing_length": 15,"liq_range": 0.005,  "min_candles": 12, "bos_lookback": 6,  "fvg_lookback": 4,  "ob_lookback": 6,  "liq_lookback": 10},
+        "Daily":{"swing_length": 15,"liq_range": 0.008,  "min_candles": 10, "bos_lookback": 4,  "fvg_lookback": 3,  "ob_lookback": 5,  "liq_lookback": 8},
+    }
+    cfg = tf_config.get(timeframe, tf_config["15M"])
+
+    if len(df) < cfg["min_candles"]:
         return []
 
     signals = []
@@ -30,7 +48,7 @@ def analyze_smc(candles_15m, candles_5m=None, candles_1m=None):
 
     # Swing highs/lows
     try:
-        swings = smc.swing_highs_lows(df, swing_length=10)
+        swings = smc.swing_highs_lows(df, swing_length=cfg["swing_length"])
     except:
         return []
 
@@ -54,14 +72,14 @@ def analyze_smc(candles_15m, candles_5m=None, candles_1m=None):
 
     # Liquidity
     try:
-        liq = smc.liquidity(df, swings, range_percent=0.003)
+        liq = smc.liquidity(df, swings, range_percent=cfg["liq_range"])
     except:
         liq = None
 
     # ── Find key levels ──
     swing_highs = []
     swing_lows = []
-    for i in range(min(last_idx, 40)):
+    for i in range(min(last_idx, cfg["bos_lookback"] * 4)):
         idx = last_idx - i
         if idx < 0:
             break
@@ -77,7 +95,7 @@ def analyze_smc(candles_15m, candles_5m=None, candles_1m=None):
     bullish_liq_levels = []
     bearish_liq_levels = []
     if liq is not None:
-        for i in range(min(last_idx, 30)):
+        for i in range(min(last_idx, cfg["liq_lookback"])):
             idx = last_idx - i
             if idx < 0:
                 break
@@ -86,15 +104,15 @@ def analyze_smc(candles_15m, candles_5m=None, candles_1m=None):
             swept = liq["Swept"].iloc[idx]
             if not pd.isna(l_val) and not pd.isna(l_level) and l_val != 0:
                 is_swept = not pd.isna(swept) and swept > 0
-                if int(l_val) == 1:  # bullish liquidity (equal lows)
+                if int(l_val) == 1:
                     bullish_liq_levels.append({"level": float(l_level), "swept": is_swept, "idx": idx})
-                elif int(l_val) == -1:  # bearish liquidity (equal highs)
+                elif int(l_val) == -1:
                     bearish_liq_levels.append({"level": float(l_level), "swept": is_swept, "idx": idx})
 
     # Recent BOS/CHoCH
     latest_bos = None
     latest_choch = None
-    for i in range(min(last_idx, 20)):
+    for i in range(min(last_idx, cfg["bos_lookback"])):
         idx = last_idx - i
         if idx < 0:
             break
@@ -106,10 +124,10 @@ def analyze_smc(candles_15m, candles_5m=None, candles_1m=None):
         if not pd.isna(choch_val) and choch_val != 0 and latest_choch is None:
             latest_choch = {"type": "Bullish" if int(choch_val) == 1 else "Bearish", "level": float(level_val) if not pd.isna(level_val) else 0, "idx": idx}
 
-    # Recent Order Block (unmitigated, last 20 bars)
+    # Recent Order Block
     near_ob = None
     if ob is not None:
-        for i in range(min(last_idx, 20)):
+        for i in range(min(last_idx, cfg["ob_lookback"])):
             idx = last_idx - i
             if idx < 0:
                 break
@@ -120,10 +138,10 @@ def analyze_smc(candles_15m, candles_5m=None, candles_1m=None):
                 near_ob = {"type": "Bullish" if int(ob_val) == 1 else "Bearish", "top": float(ob_top), "bottom": float(ob_bot), "idx": idx}
                 break
 
-    # Recent FVG (unmitigated, last 15 bars)
+    # Recent FVG
     near_fvg = None
     if fvg is not None:
-        for i in range(min(last_idx, 15)):
+        for i in range(min(last_idx, cfg["fvg_lookback"])):
             idx = last_idx - i
             if idx < 0:
                 break
@@ -136,70 +154,9 @@ def analyze_smc(candles_15m, candles_5m=None, candles_1m=None):
                     near_fvg = {"type": "Bullish" if int(f_val) == 1 else "Bearish", "top": float(f_top), "bottom": float(f_bot), "idx": idx}
                     break
 
-    # ── TP based on liquidity pools ──
-    def find_tp_long(sl_price):
-        # Target next bearish liquidity (equal highs) or swing high
-        targets = []
-        for sh in swing_highs:
-            if sh > price:
-                targets.append(sh)
-        for bl in bearish_liq_levels:
-            if bl["level"] > price:
-                targets.append(bl["level"])
-        if targets:
-            return min(targets)
-        # Fallback: 2x risk
-        return price + (price - sl_price) * 2
-
-    def find_tp_short(sl_price):
-        targets = []
-        for sl in swing_lows:
-            if sl < price:
-                targets.append(sl)
-        for bl in bullish_liq_levels:
-            if bl["level"] < price:
-                targets.append(bl["level"])
-        if targets:
-            return max(targets)
-        return price - (sl_price - price) * 2
-
-    # ── SIGNALS ──
-
-    # 1. Liquidity Sweep LONG (bear trap)
-    swept_bearish = [l for l in bearish_liq_levels if l["swept"] and l["idx"] >= last_idx - 8]
-    if swept_bearish:
-        sweep = swept_bearish[0]
-        sweep_level = sweep["level"]
-        # Check if price reversing after sweep
-        recent_low = float(df["low"].iloc[max(0, sweep["idx"]):last_idx+1].min())
-        if price > recent_low * 1.001:
-            sl_price = recent_low - abs(price - recent_low) * 0.1
-            tp_price = find_tp_long(sl_price)
-            # Find next bullish OB for better entry
-            entry_price = price
-            entry_type = "Market"
-            if near_ob and near_ob["type"] == "Bullish" and near_ob["bottom"] <= price <= near_ob["top"]:
-                entry_price = near_ob["bottom"]
-                entry_type = "Limit at OB"
-
-            signals.append({
-                "strategy": "SMC", "direction": "LONG",
-                "setup": f"Liquidity Sweep + {'OB Entry' if near_ob and near_ob['type']=='Bullish' else 'Reversal'}",
-                "order_type": "Buy Limit" if entry_type.startswith("Limit") else "Buy Limit",
-                "entry": round(entry_price, 1), "sl": round(sl_price, 1),
-                "tp": round(tp_price, 1),
-                "confidence": 0.78, "timeframe": "15M",
-                "price_now": price,
-                "reasoning": (
-                    f"Bearish liquidity swept at {fmt(sweep_level)} — stop hunt complete. "
-                    f"Smart money grabbed sell-side stops, now reversing up. "
-                    + (f"Entry at bullish OB ({fmt(near_ob['bottom'])}-{fmt(near_ob['top'])}). " if near_ob and near_ob["type"] == "Bullish" else "")
-                    + f"SL below sweep low {fmt(sl_price)}. TP at next bearish liquidity {fmt(tp_price)}."
-                ),
-            })
-
-    # 2. Liquidity Sweep SHORT (bull trap)
-    swept_bullish = [l for l in bullish_liq_levels if l["swept"] and l["idx"] >= last_idx - 8]
+    # Sweep detection windows
+    swept_bearish = [l for l in bearish_liq_levels if l["swept"] and l["idx"] >= last_idx - cfg["bos_lookback"]]
+    swept_bullish = [l for l in bullish_liq_levels if l["swept"] and l["idx"] >= last_idx - cfg["bos_lookback"]]
     if swept_bullish:
         sweep = swept_bullish[0]
         sweep_level = sweep["level"]
@@ -217,7 +174,7 @@ def analyze_smc(candles_15m, candles_5m=None, candles_1m=None):
                 "order_type": "Sell Limit",
                 "entry": round(price, 1), "sl": round(sl_price, 1),
                 "tp": round(tp_price, 1),
-                "confidence": 0.78, "timeframe": "15M",
+                "confidence": 0.78, "timeframe": timeframe,
                 "price_now": price,
                 "reasoning": (
                     f"Bullish liquidity swept at {fmt(sweep_level)} — buy-side stops grabbed. "
@@ -240,7 +197,7 @@ def analyze_smc(candles_15m, candles_5m=None, candles_1m=None):
             "setup": "CHoCH Bullish — Structure Reversal",
             "order_type": "Buy Limit", "entry": round(entry_price, 1),
             "sl": round(sl_price, 1), "tp": round(tp_price, 1),
-            "confidence": 0.75, "timeframe": "15M",
+            "confidence": 0.75, "timeframe": timeframe,
             "price_now": price,
             "reasoning": (
                 f"Change of Character: price broke above swing high — sellers lost control. "
@@ -262,7 +219,7 @@ def analyze_smc(candles_15m, candles_5m=None, candles_1m=None):
             "setup": "CHoCH Bearish — Structure Reversal",
             "order_type": "Sell Limit", "entry": round(entry_price, 1),
             "sl": round(sl_price, 1), "tp": round(tp_price, 1),
-            "confidence": 0.75, "timeframe": "15M",
+            "confidence": 0.75, "timeframe": timeframe,
             "price_now": price,
             "reasoning": (
                 f"Change of Character: price broke below swing low — buyers lost control. "
@@ -281,7 +238,7 @@ def analyze_smc(candles_15m, candles_5m=None, candles_1m=None):
                 "setup": "Bullish Order Block Bounce",
                 "order_type": "Buy Limit", "entry": round(near_ob["bottom"], 1),
                 "sl": round(sl_price, 1), "tp": round(tp_price, 1),
-                "confidence": 0.70, "timeframe": "15M",
+                "confidence": 0.70, "timeframe": timeframe,
                 "price_now": price,
                 "reasoning": (
                     f"Price at bullish Order Block ({fmt(near_ob['bottom'])}-{fmt(near_ob['top'])}). "
@@ -296,7 +253,7 @@ def analyze_smc(candles_15m, candles_5m=None, candles_1m=None):
                 "setup": "Bearish Order Block Rejection",
                 "order_type": "Sell Limit", "entry": round(near_ob["top"], 1),
                 "sl": round(sl_price, 1), "tp": round(tp_price, 1),
-                "confidence": 0.70, "timeframe": "15M",
+                "confidence": 0.70, "timeframe": timeframe,
                 "price_now": price,
                 "reasoning": (
                     f"Price at bearish Order Block ({fmt(near_ob['bottom'])}-{fmt(near_ob['top'])}). "
@@ -314,7 +271,7 @@ def analyze_smc(candles_15m, candles_5m=None, candles_1m=None):
                 "setup": "Bullish FVG Fill",
                 "order_type": "Buy Limit", "entry": round(near_fvg["bottom"], 1),
                 "sl": round(sl_price, 1), "tp": round(tp_price, 1),
-                "confidence": 0.68, "timeframe": "15M",
+                "confidence": 0.68, "timeframe": timeframe,
                 "price_now": price,
                 "reasoning": (
                     f"Price filling bullish Fair Value Gap ({fmt(near_fvg['bottom'])}-{fmt(near_fvg['top'])}). "
@@ -329,7 +286,7 @@ def analyze_smc(candles_15m, candles_5m=None, candles_1m=None):
                 "setup": "Bearish FVG Fill",
                 "order_type": "Sell Limit", "entry": round(near_fvg["top"], 1),
                 "sl": round(sl_price, 1), "tp": round(tp_price, 1),
-                "confidence": 0.68, "timeframe": "15M",
+                "confidence": 0.68, "timeframe": timeframe,
                 "price_now": price,
                 "reasoning": (
                     f"Price filling bearish Fair Value Gap ({fmt(near_fvg['bottom'])}-{fmt(near_fvg['top'])}). "
@@ -347,7 +304,7 @@ def analyze_smc(candles_15m, candles_5m=None, candles_1m=None):
             "setup": "BOS Bullish — Trend Continuation",
             "order_type": "Buy Limit", "entry": round(price, 1),
             "sl": round(sl_price, 1), "tp": round(tp_price, 1),
-            "confidence": 0.72, "timeframe": "15M",
+            "confidence": 0.72, "timeframe": timeframe,
             "price_now": price,
             "reasoning": (
                 f"Break of Structure Bullish — market in uptrend. "
@@ -366,7 +323,7 @@ def analyze_smc(candles_15m, candles_5m=None, candles_1m=None):
             "setup": "BOS Bearish — Trend Continuation",
             "order_type": "Sell Limit", "entry": round(price, 1),
             "sl": round(sl_price, 1), "tp": round(tp_price, 1),
-            "confidence": 0.72, "timeframe": "15M",
+            "confidence": 0.72, "timeframe": timeframe,
             "price_now": price,
             "reasoning": (
                 f"Break of Structure Bearish — market in downtrend. "

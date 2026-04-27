@@ -230,11 +230,52 @@ def run_monitor():
                             sig["trade_type"] = "SCALP"
                             scalp_signals.append(sig)
                     if m15_smc:
-                        for sig in analyze_smc(m15_smc, m5, m1):
+                        for sig in analyze_smc(m15_smc, "15M", m5, m1):
                             sig["symbol"] = symbol; sig["symbol_name"] = sym_name
                             sig["price_now"] = m15_smc[0][4]; sig["strategy"] = "SMC"
                             sig["session"] = f"{session_emoji} {session_name}"
-                            sig["trade_type"] = "SWING"  # SMC is swing
+                            sig["trade_type"] = "SWING"
+                            swing_signals.append(sig)
+
+                    # SMC on all timeframes
+                    if m1 and len(m1) >= 30:
+                        for sig in analyze_smc(m1, "1M"):
+                            sig["symbol"] = symbol; sig["symbol_name"] = sym_name
+                            sig["price_now"] = m1[0][4]; sig["strategy"] = "SMC"
+                            sig["session"] = f"{session_emoji} {session_name}"
+                            sig["trade_type"] = "SCALP"
+                            sig["confidence"] = sig.get("confidence", 0.6) * 0.9  # micro SMC less reliable
+                            scalp_signals.append(sig)
+                    if m5 and len(m5) >= 25:
+                        for sig in analyze_smc(m5, "5M"):
+                            sig["symbol"] = symbol; sig["symbol_name"] = sym_name
+                            sig["price_now"] = m5[0][4]; sig["strategy"] = "SMC"
+                            sig["session"] = f"{session_emoji} {session_name}"
+                            sig["trade_type"] = "SCALP"
+                            scalp_signals.append(sig)
+                    if h1 and len(h1) >= 15:
+                        for sig in analyze_smc(h1, "1H"):
+                            sig["symbol"] = symbol; sig["symbol_name"] = sym_name
+                            sig["price_now"] = h1[0][4]; sig["strategy"] = "SMC"
+                            sig["session"] = f"{session_emoji} {session_name}"
+                            sig["trade_type"] = "SWING"
+                            sig["confidence"] = sig.get("confidence", 0.6) + 0.05
+                            swing_signals.append(sig)
+                    if h4 and len(h4) >= 12:
+                        for sig in analyze_smc(h4, "4H"):
+                            sig["symbol"] = symbol; sig["symbol_name"] = sym_name
+                            sig["price_now"] = h4[0][4]; sig["strategy"] = "SMC"
+                            sig["session"] = f"{session_emoji} {session_name}"
+                            sig["trade_type"] = "SWING"
+                            sig["confidence"] = sig.get("confidence", 0.6) + 0.10
+                            swing_signals.append(sig)
+                    if d1 and len(d1) >= 10:
+                        for sig in analyze_smc(d1, "Daily"):
+                            sig["symbol"] = symbol; sig["symbol_name"] = sym_name
+                            sig["price_now"] = d1[0][4]; sig["strategy"] = "SMC"
+                            sig["session"] = f"{session_emoji} {session_name}"
+                            sig["trade_type"] = "SWING"
+                            sig["confidence"] = sig.get("confidence", 0.6) + 0.12
                             swing_signals.append(sig)
 
                     # 1H + 4H + Daily Swing analysis
