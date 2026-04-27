@@ -178,12 +178,33 @@ def score_signal(sig):
 
 
 def select_best_signals(all_signals):
-    """Select the best signal per direction per symbol. No conflicts."""
+    """Select the best signal per direction per symbol. No conflicts. Filters bad signals."""
     if not all_signals:
         return []
 
-    # Score all
+    # Filter: minimum candle quality
+    filtered = []
     for s in all_signals:
+        entry = s.get("entry", 0)
+        sl = s.get("sl", 0)
+        if not entry or not sl or entry <= 0 or sl <= 0:
+            continue
+        # Ensure minimum SL distance (0.05% for plausible trades)
+        sl_pct = abs(entry - sl) / entry * 100
+        if sl_pct < 0.03:
+            continue
+        # Ensure TP is beyond entry
+        if s["direction"] == "LONG" and s.get("tp", 0) <= entry:
+            continue
+        if s["direction"] == "SHORT" and s.get("tp", 0) >= entry:
+            continue
+        filtered.append(s)
+
+    if not filtered:
+        return []
+
+    # Score all
+    for s in filtered:
         s["score"] = score_signal(s)
 
     # Group by symbol + direction

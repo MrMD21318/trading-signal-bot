@@ -147,6 +147,7 @@ def run_monitor():
                 "Signal Monitor v3 Online\nMulti-TP | SMC+Scalp | TP/SL tracking")
 
     last_scan = last_session = last_news = last_track = last_heartbeat = 0
+    sent_signals = {}  # key -> timestamp, prevents duplicates
 
     while True:
         try:
@@ -181,6 +182,11 @@ def run_monitor():
                     m5 = get_candles(symbol, "5", 40)
                     m15 = get_candles(symbol, "15", 30)
                     m15_smc = get_candles(symbol, "15", 50)
+
+                    # Skip if insufficient candles (stale/broken data)
+                    if not m5 or len(m5) < 5:
+                        last_scan = now
+                        continue
 
                     if m1:
                         for sig in analyze_candles_1m(m1):
@@ -227,6 +233,16 @@ def run_monitor():
                 best = select_best_signals(all_signals)
 
                 for sig in best:
+                    # Dedup: don't send same symbol+direction within 10 minutes
+                    dedup_key = f"{symbol}_{sig['direction']}_{sig['setup']}"
+                    if dedup_key in sent_signals and now - sent_signals[dedup_key] < 600:
+                        continue
+                    sent_signals[dedup_key] = now
+                    # Clean old entries
+                    for k in list(sent_signals.keys()):
+                        if now - sent_signals[k] > 1200:
+                            del sent_signals[k]
+
                     if get_active_signal_count(symbol) >= 2:
                         continue
 
