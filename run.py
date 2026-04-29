@@ -128,6 +128,7 @@ def run_monitor():
     )
     from tv_price import get_all_prices
     from mt5_executor import execute_signal as mt5_execute
+    from mt5_manager import manage_positions as mt5_manage
     TOK = os.getenv("TELEGRAM_BOT_TOKEN", "8644679098:AAF0Ag9nNOElhldvpTXXO2rHLB7dPmOtM5A")
     DEFAULT = "CFI:US100"
 
@@ -421,11 +422,17 @@ def run_monitor():
                     elif mt5_result.get("error"):
                         logger.warning("MT5 skip: %s", mt5_result["error"])
 
-                    # Only track signals that have reasonable SL (avoid tracking noise)
+                    # Track signal only if R:R > 1.5
                     if abs(sig["tp2"] - sig["entry"]) > abs(sig["sl"] - sig["entry"]) * 1.5:
                         track_signal(symbol, sig["direction"], sig["entry"], sig["sl"],
                                     tp1, tp2, tp3, sig["setup"], sig.get("timeframe", ""),
                                     sig.get("confidence", 0))
+
+                # ── MT5 position management (SL trailing, breakeven, sideways detection) ──
+                mt5_msgs = mt5_manage()
+                for mt5_msg in mt5_msgs:
+                    for u in target_users:
+                        tg_send(TOK, u["chat_id"], mt5_msg)
                     time.sleep(1.2)
 
             # Sessions & news
