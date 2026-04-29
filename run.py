@@ -129,6 +129,7 @@ def run_monitor():
     from tv_price import get_all_prices
     from mt5_executor import execute_signal as mt5_execute
     from mt5_manager import manage_positions as mt5_manage
+    from ai_agent import evaluate_signal as ai_evaluate, manage_trade_ai
     TOK = os.getenv("TELEGRAM_BOT_TOKEN", "8644679098:AAF0Ag9nNOElhldvpTXXO2rHLB7dPmOtM5A")
     DEFAULT = "CFI:US100"
 
@@ -404,6 +405,30 @@ def run_monitor():
                     sig["tp1"] = tp1; sig["tp2"] = tp2; sig["tp3"] = tp3
 
                     msg = format_professional_signal(sig)
+
+                    # AI evaluates the signal
+                    d1_candles = get_candles(symbol, "1D", 10)
+                    m15_candles = get_candles(symbol, "15", 20)
+                    ai_decision = ai_evaluate(sig, d1_candles, m15_candles)
+
+                    if ai_decision.get("action") == "SKIP":
+                        logger.info("AI SKIPPED: %s — %s", sig["setup"], ai_decision.get("reason_en", ""))
+                        for u in target_users:
+                            tg_send(TOK, u["chat_id"],
+                                f"\u274c <b>AI Skipped Signal</b>\n"
+                                f"{ai_decision.get('reason_ar','Signal rejected by AI')}\n\n"
+                                f"{ai_decision.get('reason_en','')}")
+                        continue
+
+                    if ai_decision.get("action") == "MODIFY":
+                        new_sl = ai_decision.get("new_sl", 0) or ai_decision.get("sl", 0)
+                        if new_sl:
+                            sig["sl"] = float(new_sl)
+                            tp1, tp2, tp3 = calculate_multi_tp(sig)
+                            sig["tp1"] = tp1; sig["tp2"] = tp2; sig["tp3"] = tp3
+                            msg = format_professional_signal(sig)
+                        logger.info("AI MODIFIED: new SL=%s", new_sl)
+
                     for u in target_users:
                         tg_send(TOK, u["chat_id"], msg)
                         log_alert(u["chat_id"], symbol, sig["direction"], sig["setup"],
