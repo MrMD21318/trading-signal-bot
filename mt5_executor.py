@@ -57,29 +57,53 @@ def disconnect():
         mt5.shutdown()
 
 
-def calculate_lot_size(sl_points):
-    """Calculate lot size based on risk percentage."""
+def calculate_lot_size(sl_points, confidence=0.7):
+    """Dynamic lot sizing based on account balance and confidence."""
     cfg = get_mt5_config()
     account = mt5.account_info()
     if not account:
         return 0.01
 
     balance = account.balance
-    risk_amount = balance * (cfg["risk_percent"] / 100)
 
-    symbol_info = mt5.symbol_info(cfg["symbol"])
-    if not symbol_info:
+    # Balance-based lot sizing
+    if balance < 100:
+        return 0.01  # Minimum account — always 0.01
+    elif balance < 500:
+        # Scale from 0.01 to 0.03 based on confidence
+        if confidence >= 0.75:
+            return 0.03
+        elif confidence >= 0.65:
+            return 0.02
         return 0.01
-
-    tick_value = symbol_info.trade_tick_value
-    tick_size = symbol_info.trade_tick_size
-
-    if tick_size == 0 or tick_value == 0:
+    elif balance < 2000:
+        if confidence >= 0.80:
+            return 0.05
+        elif confidence >= 0.70:
+            return 0.03
+        elif confidence >= 0.60:
+            return 0.02
         return 0.01
+    else:
+        # Larger accounts: risk-based sizing
+        risk_amount = balance * (cfg["risk_percent"] / 100)
 
-    lot_size = risk_amount / (sl_points / tick_size * tick_value)
-    lot_size = round(lot_size, 2)
-    return max(0.01, min(lot_size, 10.0))
+        symbol_info = mt5.symbol_info(cfg["symbol"])
+        if not symbol_info:
+            return 0.05
+
+        tick_value = symbol_info.trade_tick_value
+        tick_size = symbol_info.trade_tick_size
+
+        if tick_size == 0 or tick_value == 0:
+            return 0.05
+
+        lot_size = risk_amount / (sl_points / tick_size * tick_value)
+        # Confidence multiplier: higher confidence = bigger position
+        lot_size *= (0.5 + confidence)
+        lot_size = round(lot_size, 2)
+
+        return max(0.01, min(lot_size, 5.0))
 
 
 def execute_signal(sig):
@@ -168,7 +192,7 @@ def execute_signal(sig):
     if sl_points <= 0:
         return {"ok": False, "error": f"Invalid SL: entry={entry} sl={sl}"}
 
-    lot = calculate_lot_size(sl_points)
+    lot = calculate_lot_size(sl_points, sig.get("confidence", 0.7))
 
     request = {
         "action": mt5.TRADE_ACTION_PENDING,

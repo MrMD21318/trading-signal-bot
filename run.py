@@ -416,9 +416,9 @@ def run_monitor():
                         logger.info("MT5 executed: %s", mt5_result)
                         for u in target_users:
                             tg_send(TOK, u["chat_id"],
-                                f"\u2705 <b>MT5 Order Placed</b>\n"
-                                f"{sig['direction']} {sig['setup']}\n"
-                                f"Lot: {mt5_result['lot']:.2f} | Entry: {mt5_result['entry']:.1f}")
+                                f"\u2705 <b>MT5 Order</b>\n"
+                                f"{sig['direction']} | Lot: <b>{mt5_result['lot']:.2f}</b>\n"
+                                f"Entry: {mt5_result['entry']:.1f} | Conf: {sig.get('confidence',0):.0%}")
                     elif mt5_result.get("error"):
                         logger.warning("MT5 skip: %s", mt5_result["error"])
 
