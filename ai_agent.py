@@ -18,6 +18,9 @@ import os
 
 logger = logging.getLogger(__name__)
 
+_last_ai_time = {}
+_ai_cache = {}
+
 DEEPSEEK_API = os.getenv("DEEPSEEK_API_KEY", "sk-a0f838920b5348d58b1bf10e34748729")
 DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
 
