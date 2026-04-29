@@ -1,4 +1,4 @@
-"""Smart Money Concepts (ICT) analysis — proper OB, FVG, Liquidity sweep trading.
+"""Smart Money Concepts (ICT) analysis — manual computation, no library dependency.
 
 TP based on next liquidity pool, not arbitrary R:R.
 """
@@ -6,8 +6,7 @@ TP based on next liquidity pool, not arbitrary R:R.
 import os
 import pandas as pd
 
-os.environ.setdefault("SMC_CREDIT", "0")
-from smartmoneyconcepts import smc
+from smc_manual import find_swings, find_bos_choch, find_order_blocks, find_fvg, find_liquidity
 
 
 def candles_to_ohlc(candles):
@@ -46,124 +45,61 @@ def analyze_smc(candles, timeframe="15M", candles_lower=None, candles_higher=Non
     last_idx = len(df) - 1
     price = float(df["close"].iloc[-1])
 
-    # Swing highs/lows
-    try:
-        swings = smc.swing_highs_lows(df, swing_length=cfg["swing_length"])
-    except:
-        return []
+    # ── Run manual SMC ──
+    candles_list = [[float(df["open"].iloc[i]), float(df["high"].iloc[i]),
+                     float(df["low"].iloc[i]), float(df["close"].iloc[i]),
+                     float(df["volume"].iloc[i])] for i in range(len(df))]
+    candles_list = [[0, c[0], c[1], c[2], c[3], c[4]] for c in candles_list]
 
-    # BOS/CHoCH
-    try:
-        bc = smc.bos_choch(df, swings, close_break=True)
-    except:
-        return []
+    swings_high, swings_low = find_swings(candles_list, cfg["swing_length"])
+    bos_list, choch_list = find_bos_choch(candles_list, swings_high, swings_low)
+    ob_list = find_order_blocks(candles_list)
+    fvg_list = find_fvg(candles_list)
+    liq_list = find_liquidity(candles_list, cfg["liq_range"])
 
-    # Order Blocks
-    try:
-        ob = smc.ob(df, swings, close_mitigation=False)
-    except:
-        ob = None
+    # Convert to our internal format
+    swing_highs = [p for _, p in swings_high]
+    swing_lows = [p for _, p in swings_low]
 
-    # FVG
-    try:
-        fvg = smc.fvg(df, join_consecutive=True)
-    except:
-        fvg = None
+    latest_bos = {"type": bos_list[-1][0], "level": bos_list[-1][2], "idx": bos_list[-1][1]} if bos_list else None
+    latest_choch = {"type": choch_list[-1][0], "level": choch_list[-1][2], "idx": choch_list[-1][1]} if choch_list else None
 
-    # Liquidity
-    try:
-        liq = smc.liquidity(df, swings, range_percent=cfg["liq_range"])
-    except:
-        liq = None
-
-    # ── Find key levels ──
-    swing_highs = []
-    swing_lows = []
-    for i in range(min(last_idx, cfg["bos_lookback"] * 4)):
-        idx = last_idx - i
-        if idx < 0:
-            break
-        val = swings["HighLow"].iloc[idx]
-        level = swings["Level"].iloc[idx]
-        if not pd.isna(val) and not pd.isna(level) and val != 0:
-            if int(val) == 1:
-                swing_highs.append(float(level))
-            elif int(val) == -1:
-                swing_lows.append(float(level))
-
-    # Liquidity pools
-    bullish_liq_levels = []
-    bearish_liq_levels = []
-    if liq is not None:
-        for i in range(min(last_idx, cfg["liq_lookback"])):
-            idx = last_idx - i
-            if idx < 0:
-                break
-            l_val = liq["Liquidity"].iloc[idx]
-            l_level = liq["Level"].iloc[idx]
-            swept = liq["Swept"].iloc[idx]
-            if not pd.isna(l_val) and not pd.isna(l_level) and l_val != 0:
-                is_swept = not pd.isna(swept) and swept > 0
-                if int(l_val) == 1:
-                    bullish_liq_levels.append({"level": float(l_level), "swept": is_swept, "idx": idx})
-                elif int(l_val) == -1:
-                    bearish_liq_levels.append({"level": float(l_level), "swept": is_swept, "idx": idx})
-
-    # Recent BOS/CHoCH
-    latest_bos = None
-    latest_choch = None
-    for i in range(min(last_idx, cfg["bos_lookback"])):
-        idx = last_idx - i
-        if idx < 0:
-            break
-        bos_val = bc["BOS"].iloc[idx]
-        choch_val = bc["CHOCH"].iloc[idx]
-        level_val = bc["Level"].iloc[idx]
-        if not pd.isna(bos_val) and bos_val != 0 and latest_bos is None:
-            latest_bos = {"type": "Bullish" if int(bos_val) == 1 else "Bearish", "level": float(level_val) if not pd.isna(level_val) else 0, "idx": idx}
-        if not pd.isna(choch_val) and choch_val != 0 and latest_choch is None:
-            latest_choch = {"type": "Bullish" if int(choch_val) == 1 else "Bearish", "level": float(level_val) if not pd.isna(level_val) else 0, "idx": idx}
-
-    # Recent Order Block
+    # Recent OB near price
     near_ob = None
-    if ob is not None:
-        for i in range(min(last_idx, cfg["ob_lookback"])):
-            idx = last_idx - i
-            if idx < 0:
-                break
-            ob_val = ob["OB"].iloc[idx]
-            ob_top = ob["Top"].iloc[idx]
-            ob_bot = ob["Bottom"].iloc[idx]
-            if not pd.isna(ob_val) and ob_val != 0 and not pd.isna(ob_top) and not pd.isna(ob_bot):
-                near_ob = {"type": "Bullish" if int(ob_val) == 1 else "Bearish", "top": float(ob_top), "bottom": float(ob_bot), "idx": idx}
-                break
+    for o_type, o_idx, o_h, o_l in reversed(ob_list[-8:]):
+        if (o_type == "Bullish" and o_l <= price <= o_h) or (o_type == "Bearish" and o_l <= price <= o_h):
+            near_ob = {"type": o_type, "top": o_h, "bottom": o_l, "idx": o_idx}
+            break
 
     # Recent FVG
     near_fvg = None
-    if fvg is not None:
-        for i in range(min(last_idx, cfg["fvg_lookback"])):
-            idx = last_idx - i
-            if idx < 0:
-                break
-            f_val = fvg["FVG"].iloc[idx]
-            f_top = fvg["Top"].iloc[idx]
-            f_bot = fvg["Bottom"].iloc[idx]
-            mitigated = fvg["MitigatedIndex"].iloc[idx]
-            if not pd.isna(f_val) and f_val != 0 and not pd.isna(f_top) and not pd.isna(f_bot):
-                if pd.isna(mitigated) or mitigated == 0:
-                    near_fvg = {"type": "Bullish" if int(f_val) == 1 else "Bearish", "top": float(f_top), "bottom": float(f_bot), "idx": idx}
-                    break
+    for f_type, f_idx, f_low, f_high in reversed(fvg_list[-6:]):
+        if (f_type == "Bullish" and f_low <= price <= f_high) or (f_type == "Bearish" and f_low <= price <= f_high):
+            near_fvg = {"type": f_type, "top": f_high, "bottom": f_low, "idx": f_idx}
+            break
 
-    # Sweep detection windows
-    swept_bearish = [l for l in bearish_liq_levels if l["swept"] and l["idx"] >= last_idx - cfg["bos_lookback"]]
-    swept_bullish = [l for l in bullish_liq_levels if l["swept"] and l["idx"] >= last_idx - cfg["bos_lookback"]]
+    # Liquidity pools
+    bullish_liq = []
+    bearish_liq = []
+    swept_bearish = []
+    swept_bullish = []
+    for l_type, l_idx, l_level, l_count in liq_list:
+        entry = {"level": l_level, "swept": l_idx >= last_idx - cfg["bos_lookback"], "idx": l_idx}
+        if l_type == "Bullish":
+            bullish_liq.append(entry)
+            if entry["swept"]:
+                swept_bullish.append(entry)
+        else:
+            bearish_liq.append(entry)
+            if entry["swept"]:
+                swept_bearish.append(entry)
 
     def find_tp_long(sl_price):
         targets = []
         for sh in swing_highs:
             if sh > price:
                 targets.append(sh)
-        for bl in bearish_liq_levels:
+        for bl in bearish_liq:
             if bl["level"] > price:
                 targets.append(bl["level"])
         if targets:
@@ -175,7 +111,7 @@ def analyze_smc(candles, timeframe="15M", candles_lower=None, candles_higher=Non
         for sw in swing_lows:
             if sw < price:
                 targets.append(sw)
-        for bl in bullish_liq_levels:
+        for bl in bullish_liq:
             if bl["level"] < price:
                 targets.append(bl["level"])
         if targets:

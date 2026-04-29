@@ -21,22 +21,29 @@ except ImportError:
 
 
 def get_mt5_window():
-    """Find and focus MetaTrader 5 window."""
+    """Find and focus MetaTrader 5 window by account number."""
     if not HAS_AUTO:
         return None
-    windows = gw.getWindowsWithTitle("MetaTrader")
-    for w in windows:
+    # Search by known title patterns
+    for w in gw.getAllWindows():
+        title = w.title or ""
         if w.visible and w.width > 400:
-            return w
+            if "CFI1-Real" in title or "US100_Spot" in title or "Credit Financial" in title:
+                return w
     return None
 
 
 def focus_mt5():
     w = get_mt5_window()
     if w:
-        w.activate()
-        time.sleep(0.3)
-        return True
+        try:
+            w.restore()
+            w.activate()
+            time.sleep(0.5)
+            return True
+        except:
+            pass
+    logger.warning("MT5 window not found")
     return False
 
 
