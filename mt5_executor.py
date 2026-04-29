@@ -128,19 +128,36 @@ def execute_signal(sig):
     if positions:
         for pos in positions:
             pos_dir = "LONG" if pos.type == mt5.POSITION_TYPE_BUY else "SHORT"
-            if pos_dir != direction:
-                logger.info("MT5: Skipping %s — conflicting %s position open (%d lots)",
-                           direction, pos_dir, pos.volume)
-                return {"ok": False, "error": f"Conflicting {pos_dir} position open on {symbol}"}
-            else:
-                logger.info("MT5: Already LONG on %s, skipping duplicate", symbol)
-                return {"ok": False, "error": "Already in same direction"}
+            entry_px = pos.price_open
+            cur_px = pos.price_current
+            sl_px = pos.sl
 
-    # Also check pending orders — don't duplicate
+            if pos_dir != direction:
+                logger.info("MT5: Skipping %s — conflicting %s position open", direction, pos_dir)
+                return {"ok": False, "error": f"Conflicting {pos_dir} position open"}
+
+            if pos_dir == direction:
+                # Same direction — check if SL is at breakeven (in profit)
+                is_profit = (cur_px > entry_px and pos_dir == "LONG") or (cur_px < entry_px and pos_dir == "SHORT")
+                sl_at_be = (pos_dir == "LONG" and sl_px >= entry_px) or (pos_dir == "SHORT" and sl_px <= entry_px)
+
+                if is_profit and sl_at_be:
+                    # SL at breakeven — safe to add position if confidence high
+                    if sig.get("confidence", 0) >= 0.72:
+                        logger.info("MT5: Adding pyramid — SL at BE, conf=%.0f%%", sig.get("confidence", 0) * 100)
+                        is_pyramid = True
+                    else:
+                        logger.info("MT5: Skipping pyramid — conf %.0f%% < 72%%", sig.get("confidence", 0) * 100)
+                        return {"ok": False, "error": f"Confidence {sig.get('confidence',0):.0%} too low for pyramid"}
+                else:
+                    logger.info("MT5: Skipping — already in %s, SL not at breakeven", pos_dir)
+                    return {"ok": False, "error": f"Already in {pos_dir}, SL not at breakeven"}
+
+    # Max 1 pending order
     orders = mt5.orders_get(symbol=symbol)
-    if orders and len(orders) >= 2:
-        logger.info("MT5: %d pending orders on %s, skipping", len(orders), symbol)
-        return {"ok": False, "error": f"{len(orders)} pending orders already"}
+    if orders:
+        logger.info("MT5: %d pending order(s) on %s, skipping", len(orders), symbol)
+        return {"ok": False, "error": f"{len(orders)} pending order(s) — wait for fill"}
     entry = sig["entry"]
     sl = sig["sl"]
     tp = sig.get("tp2", sig.get("tp", entry))

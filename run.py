@@ -413,10 +413,11 @@ def run_monitor():
                     # Auto-execute on MT5 if enabled
                     mt5_result = mt5_execute(sig)
                     if mt5_result.get("ok"):
+                        is_pyramid = "SL at breakeven" if mt5_result.get("pyramid") else ""
                         logger.info("MT5 executed: %s", mt5_result)
                         for u in target_users:
                             tg_send(TOK, u["chat_id"],
-                                f"\u2705 <b>MT5 Order</b>\n"
+                                f"\u2705 <b>MT5 Order</b>{' \U0001f4c8 Pyramid' if is_pyramid else ''}\n"
                                 f"{sig['direction']} | Lot: <b>{mt5_result['lot']:.2f}</b>\n"
                                 f"Entry: {mt5_result['entry']:.1f} | Conf: {sig.get('confidence',0):.0%}")
                     elif mt5_result.get("error"):
