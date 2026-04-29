@@ -22,7 +22,7 @@ except ImportError:
 
 def get_cfg():
     return {
-        "symbol": os.getenv("MT5_SYMBOL", "US100"),
+        "symbol": os.getenv("MT5_SYMBOL", "US100_Spot"),
         "enabled": os.getenv("MT5_ENABLED", "false").lower() == "true",
     }
 

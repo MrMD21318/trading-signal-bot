@@ -25,7 +25,7 @@ def get_mt5_config():
         "server": os.getenv("MT5_SERVER", ""),
         "enabled": os.getenv("MT5_ENABLED", "false").lower() == "true",
         "risk_percent": float(os.getenv("MT5_RISK_PCT", "1.0")),  # risk per trade %
-        "symbol": os.getenv("MT5_SYMBOL", "US100"),  # MT5 symbol name
+        "symbol": os.getenv("MT5_SYMBOL", "US100_Spot"),  # Nasdaq 100 Cash on MT5
         "max_spread": int(os.getenv("MT5_MAX_SPREAD", "50")),  # max spread points
     }
 
