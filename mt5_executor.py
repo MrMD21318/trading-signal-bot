@@ -83,16 +83,8 @@ def calculate_lot_size(sl_points):
 
 
 def execute_signal(sig):
-    """Execute a trading signal on MT5.
+    """Execute a trading signal on MT5. Skips if conflicting position exists."""
 
-    Signal format:
-      direction: LONG/SHORT
-      entry: float
-      sl: float
-      tp: float (tp2 preferred)
-      order_type: Buy Limit / Sell Limit / Buy Stop / Sell Stop
-      symbol_name: str
-    """
     if not MT5_AVAILABLE:
         return {"ok": False, "error": "MT5 not available"}
 
@@ -106,6 +98,25 @@ def execute_signal(sig):
 
     symbol = cfg["symbol"]
     direction = sig["direction"]
+
+    # Check existing positions — don't open conflicting trade
+    positions = mt5.positions_get(symbol=symbol)
+    if positions:
+        for pos in positions:
+            pos_dir = "LONG" if pos.type == mt5.POSITION_TYPE_BUY else "SHORT"
+            if pos_dir != direction:
+                logger.info("MT5: Skipping %s — conflicting %s position open (%d lots)",
+                           direction, pos_dir, pos.volume)
+                return {"ok": False, "error": f"Conflicting {pos_dir} position open on {symbol}"}
+            else:
+                logger.info("MT5: Already LONG on %s, skipping duplicate", symbol)
+                return {"ok": False, "error": "Already in same direction"}
+
+    # Also check pending orders — don't duplicate
+    orders = mt5.orders_get(symbol=symbol)
+    if orders and len(orders) >= 2:
+        logger.info("MT5: %d pending orders on %s, skipping", len(orders), symbol)
+        return {"ok": False, "error": f"{len(orders)} pending orders already"}
     entry = sig["entry"]
     sl = sig["sl"]
     tp = sig.get("tp2", sig.get("tp", entry))

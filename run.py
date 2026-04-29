@@ -178,7 +178,8 @@ def run_monitor():
                 "Signal Monitor v3 Online\nMulti-TP | SMC+Scalp | TP/SL tracking")
 
     last_scan = last_session = last_news = last_track = last_heartbeat = 0
-    sent_signals = {}  # key -> timestamp, prevents duplicates
+    sent_signals = {}
+    last_direction_per_symbol = {}  # symbol -> last direction sent + timestamp
 
     while True:
         try:
@@ -360,6 +361,16 @@ def run_monitor():
                 best = best_scalp + best_swing  # Send both, but max 1 scalp + 1 swing per cycle
 
                 for sig in best:
+                    # CONFLICT PREVENTION: don't send opposing direction within 30 min
+                    sym_dir = f"{symbol}_{sig['direction']}"
+                    opp_dir = f"{symbol}_{'SHORT' if sig['direction'] == 'LONG' else 'LONG'}"
+                    if opp_dir in last_direction_per_symbol:
+                        opp_time = last_direction_per_symbol[opp_dir]
+                        if now - opp_time < 1800:  # 30 min cooldown
+                            logger.info("CONFLICT BLOCKED: %s vs recent %s", sig['direction'], opp_dir)
+                            continue
+                    last_direction_per_symbol[sym_dir] = now
+
                     # Enforce minimum SL distance: 0.05% for scalp, 0.15% for swing
                     entry = sig["entry"]
                     sl = sig["sl"]
