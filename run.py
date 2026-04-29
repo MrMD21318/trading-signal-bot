@@ -371,17 +371,20 @@ def run_monitor():
                             continue
                     last_direction_per_symbol[sym_dir] = now
 
-                    # Enforce minimum SL distance: 0.05% for scalp, 0.15% for swing
+                    # Enforce minimum SL distance based on signal type
                     entry = sig["entry"]
                     sl = sig["sl"]
                     is_swing = sig.get("trade_type") == "SWING" or sig.get("strategy") == "SMC"
-                    min_sl_pct = 0.0015 if is_swing else 0.0005
+                    min_sl_pct = 0.0025 if is_swing else 0.0015  # 0.25% swing, 0.15% scalp
                     current_sl_dist = abs(entry - sl)
-                    min_sl_dist = entry * min_sl_pct
-                    if current_sl_dist < min_sl_dist and sig["direction"] == "LONG":
-                        sig["sl"] = round(entry - min_sl_dist, 1)
-                    elif current_sl_dist < min_sl_dist and sig["direction"] == "SHORT":
-                        sig["sl"] = round(entry + min_sl_dist, 1)
+                    min_sl_dist = max(entry * min_sl_pct, 20)  # minimum 20 points absolute
+                    # Adjust SL proportionally if too tight
+                    missing = min_sl_dist - current_sl_dist
+                    if missing > 0:
+                        if sig["direction"] == "LONG":
+                            sig["sl"] = round(entry - min_sl_dist, 1)
+                        else:
+                            sig["sl"] = round(entry + min_sl_dist, 1)
 
                     # Dedup: don't send same symbol+direction within 10 minutes
                     dedup_key = f"{symbol}_{sig['direction']}_{sig['setup']}"
