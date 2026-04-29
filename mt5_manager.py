@@ -28,10 +28,12 @@ def get_cfg():
 
 
 def get_candles_data(symbol, tf, count):
-    """Get candles for trend detection."""
+    """Get candles for trend detection — maps MT5 symbol to analysis symbol."""
+    YF_MAP = {"US100_Spot": "CFI:US100", "US100": "CFI:US100"}
+    mapped = YF_MAP.get(symbol, symbol)
     try:
         from run_us100_monitor import get_candles
-        return get_candles(symbol, tf, count)
+        return get_candles(mapped, tf, count)
     except:
         return []
 
