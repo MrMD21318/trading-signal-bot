@@ -127,6 +127,7 @@ def run_monitor():
         check_active_signals, track_signal, get_active_signal_count,
     )
     from tv_price import get_all_prices
+    from mt5_executor import execute_signal as mt5_execute
     TOK = os.getenv("TELEGRAM_BOT_TOKEN", "8644679098:AAF0Ag9nNOElhldvpTXXO2rHLB7dPmOtM5A")
     DEFAULT = "CFI:US100"
 
@@ -393,6 +394,18 @@ def run_monitor():
                         log_alert(u["chat_id"], symbol, sig["direction"], sig["setup"],
                                  sig["entry"], sig["sl"], tp2, sig.get("strategy", ""),
                                  sig.get("timeframe", ""), sig.get("confidence", 0))
+
+                    # Auto-execute on MT5 if enabled
+                    mt5_result = mt5_execute(sig)
+                    if mt5_result.get("ok"):
+                        logger.info("MT5 executed: %s", mt5_result)
+                        for u in target_users:
+                            tg_send(TOK, u["chat_id"],
+                                f"\u2705 <b>MT5 Order Placed</b>\n"
+                                f"{sig['direction']} {sig['setup']}\n"
+                                f"Lot: {mt5_result['lot']:.2f} | Entry: {mt5_result['entry']:.1f}")
+                    elif mt5_result.get("error"):
+                        logger.warning("MT5 skip: %s", mt5_result["error"])
 
                     # Only track signals that have reasonable SL (avoid tracking noise)
                     if abs(sig["tp2"] - sig["entry"]) > abs(sig["sl"] - sig["entry"]) * 1.5:
