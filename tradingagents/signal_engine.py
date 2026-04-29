@@ -334,8 +334,16 @@ def format_professional_signal(sig, is_new=True):
     for en, ar in ar_terms.items():
         reasoning_ar = reasoning_ar.replace(en, ar)
 
+    # Order type explanation
+    if "Stop" in order_en:
+        order_reason = "Breakout \u2191" if direction == "LONG" else "Breakdown \u2193"
+        order_reason_ar = "\u0627\u062e\u062a\u0631\u0627\u0642" if direction == "LONG" else "\u0643\u0633\u0631"
+    else:
+        order_reason = "Retest \u2190" if direction == "LONG" else "Reject \u2192"
+        order_reason_ar = "\u0627\u0631\u062a\u062f\u0627\u062f" if direction == "LONG" else "\u0627\u0631\u062a\u062f\u0627\u062f"
+
     return (
-        f"{d} <b>{dir_ar} | {label_ar} | {order_ar}</b> {conf_stars}\n"
+        f"{d} <b>{dir_ar} | {label_ar} | {order_ar} ({order_reason_ar})</b> {conf_stars}\n"
         f"\U0001f4b0 <code>{fmt(price_now)}</code> | {session_str}\n"
         f"\U0001f4ca {sym_name} | <code>{sym}</code> | {tf}\n\n"
         f"\U0001f3af \u0627\u0644\u062f\u062e\u0648\u0644: <code>{fmt(entry)}</code>\n"
@@ -344,7 +352,7 @@ def format_professional_signal(sig, is_new=True):
         f"\u2b50 \u0627\u0644\u062b\u0642\u0629: {conf:.0%}\n\n"
         f"\U0001f9e0 <i>{reasoning_ar}</i>\n\n"
         f"{'─' * 20}\n"
-        f"{d} <b>{direction} | {label_en} | {order_en}</b> {conf_stars}\n"
+        f"{d} <b>{direction} | {label_en} | {order_en} ({order_reason})</b> {conf_stars}\n"
         f"\U0001f4b0 <code>{fmt(price_now)}</code> | {session_str}\n"
         f"\U0001f4ca {sym_name} | <code>{sym}</code> | {tf}\n\n"
         f"\U0001f3af ENTRY: <code>{fmt(entry)}</code>\n"
