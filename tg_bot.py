@@ -318,3 +318,45 @@ def poll_updates():
         except Exception as e:
             logger.error("Poll error: %s", e)
             time.sleep(5)
+
+
+# ── AI Chat handler ────────────────────────────────────────────
+def chat_with_ai(chat_id, user_text, user_name=""):
+    """Send user message to DeepSeek and return response."""
+    import requests as req, os, sys
+    sys.path.insert(0, os.path.dirname(__file__))
+
+    # Get market context
+    ctx = ""
+    try:
+        from run_us100_monitor import get_candles, fmt
+        from smc_manual import find_swings, find_order_blocks, find_liquidity
+        c = get_candles("CFI:US100", "15", 20)[::-1]
+        p = c[-1][4]
+        h,l = find_swings(c, 10)
+        ctx = f"US100 price: {fmt(p)}. "
+        if h: ctx += f"Resistance: {fmt(max(x[1] for x in h))}. "
+        if l: ctx += f"Support: {fmt(min(x[1] for x in l))}. "
+    except:
+        pass
+
+    key = os.getenv("DEEPSEEK_API_KEY", "sk-a0f838920b5348d58b1bf10e34748729")
+    try:
+        resp = req.post("https://api.deepseek.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {key}"},
+            json={
+                "model": "deepseek-chat",
+                "max_tokens": 500,
+                "temperature": 0.4,
+                "messages": [
+                    {"role": "system", "content": f"You are an expert SMC/ICT trader analyzing CFI:US100 (Nasdaq100). Reply in Arabic+English. Be helpful, decisive, and technical. Current market: {ctx}. Give entry/SL/TP when asked. Use emojis."},
+                    {"role": "user", "content": user_text}
+                ]
+            },
+            timeout=20
+        )
+        if resp.status_code == 200:
+            return resp.json()["choices"][0]["message"]["content"]
+    except:
+        pass
+    return "Error connecting to AI. Try again."

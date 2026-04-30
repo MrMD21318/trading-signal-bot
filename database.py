@@ -73,7 +73,7 @@ def upsert_user(chat_id, first_name="", username="", phone=""):
     if existing:
         conn.execute(
             "UPDATE users SET first_name=?, username=?, telegram_name=?, phone=? WHERE chat_id=?",
-            (first_name, username, telegram_name, phone or existing["phone"], chat_id),
+            (first_name, username, telegram_name, phone or "", chat_id),
         )
     else:
         conn.execute(
