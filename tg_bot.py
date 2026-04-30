@@ -168,7 +168,67 @@ def handle_callback(cb):
         if not selected:
             edit_msg(chat_id, msg_id, "⚠️ You must select at least one market. Try again:", markets_keyboard([]))
             user_states[chat_id] = {"state": "choosing", "selected": [], "message_id": None}
-            return "ok"
+        return "ok"
+
+    # ── Trading commands ──
+    if text in ("/price", "price"):
+        try:
+            import MetaTrader5 as mt5
+            mt5.initialize()
+            mt5.login(22148595)
+            t = mt5.symbol_info_tick("US100_Spot")
+            if t:
+                send_msg(chat_id, f"\U0001f4b0 <b>US100: {t.ask:.1f}</b>\nSpread: {t.ask-t.bid:.1f}")
+            else:
+                send_msg(chat_id, "MT5 not connected")
+        except:
+            send_msg(chat_id, "Error getting price")
+        return "ok"
+
+    if text in ("/signal", "signal"):
+        try:
+            import sys, os
+            sys.path.insert(0, os.path.dirname(__file__))
+            from run_us100_monitor import get_candles, fmt
+            m1 = get_candles("CFI:US100", "1", 5)
+            m5 = get_candles("CFI:US100", "5", 4)
+            if m1 and m5:
+                p = m1[0][4]
+                g1 = sum(1 for c in m1[:5] if c[4] > c[1])
+                g5 = sum(1 for c in m5[:4] if c[4] > c[1])
+                trend = "BULLISH" if g5 >= 3 else "BEARISH" if g5 <= 1 else "NEUTRAL"
+                send_msg(chat_id,
+                    f"\U0001f4ca <b>Quick Signal</b>\n"
+                    f"Price: <code>{fmt(p)}</code>\n"
+                    f"1M: {g1}/5 green\n5M: {g5}/4 green\n"
+                    f"Trend: <b>{trend}</b>\n\n"
+                    f"{'BUY' if trend=='BULLISH' else 'SELL' if trend=='BEARISH' else 'WAIT'}"
+                )
+        except:
+            send_msg(chat_id, "Error")
+        return "ok"
+
+    if text in ("/analysis", "analysis"):
+        try:
+            import sys, os; sys.path.insert(0, os.path.dirname(__file__))
+            from run_us100_monitor import get_candles, fmt
+            from smc_manual import find_swings, find_order_blocks, find_liquidity
+            m15 = get_candles("CFI:US100", "15", 30)[::-1]
+            p = m15[-1][4]
+            h, l = find_swings(m15, 10)
+            obs = find_order_blocks(m15)
+            liqs = find_liquidity(m15)
+            msg = f"\U0001f9e0 <b>SMC Analysis</b>\nPrice: <code>{fmt(p)}</code>\n"
+            if h: msg += f"Resist: {fmt(h[-1][1])}\n"
+            if l: msg += f"Support: {fmt(l[-1][1])}\n"
+            near_ob = [o for o in obs if o[2] <= p <= o[3]]
+            if near_ob: msg += f"OB: {near_ob[0][0]} {fmt(near_ob[0][2])}-{fmt(near_ob[0][3])}\n"
+            near_liq = [x for x in liqs if abs(x[2]-p)/p < 0.002]
+            if near_liq: msg += f"Liq: {near_liq[0][0]} at {fmt(near_liq[0][2])}\n"
+            send_msg(chat_id, msg)
+        except Exception as e:
+            send_msg(chat_id, f"Error: {e}")
+        return "ok"
         # Save to DB
         conn_remove = __import__("database").get_conn()
         conn_remove.execute("DELETE FROM user_symbols WHERE chat_id=?", (chat_id,))
