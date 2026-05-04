@@ -137,6 +137,64 @@ def get_active_signal_count(symbol=None):
 
 
 # ── Signal scoring and selection ──────────────────────────────
+
+SCALP_FRAMES = ["1M", "5M", "15M"]
+SWING_FRAMES = ["15M", "1H", "4H"]
+_last_support = {}
+_last_resistance = {}
+_last_break_alert = {}
+
+
+def confirm_multi_tf(signal, all_signals):
+    trade_type = signal.get("trade_type", "SCALP")
+    required_frames = SCALP_FRAMES if trade_type == "SCALP" else SWING_FRAMES
+    direction = signal["direction"]
+    for tf in required_frames:
+        tf_signals = [s for s in all_signals if s.get("timeframe") == tf]
+        if not tf_signals:
+            continue
+        same_dir = sum(1 for s in tf_signals if s["direction"] == direction)
+        total = len(tf_signals)
+        if total > 0 and same_dir / total < 0.4:
+            return False
+    return True
+
+
+def check_level_break(symbol, current_price, swing_highs, swing_lows, timeframe="15M"):
+    global _last_support, _last_resistance, _last_break_alert
+    import time as _time
+    key = f"{symbol}_{timeframe}"
+    now = _time.time()
+    if key in _last_break_alert and now - _last_break_alert[key] < 1800:
+        return None
+
+    resistance = next((h for h in sorted(swing_highs) if h > current_price), None)
+    support = next((l for l in sorted(swing_lows, reverse=True) if l < current_price), None)
+    if not resistance or not support:
+        return None
+
+    signal = None
+    if current_price > resistance and _last_resistance.get(key) != resistance:
+        _last_resistance[key] = resistance
+        _last_break_alert[key] = now
+        signal = {
+            "direction": "LONG", "setup": f"BREAKOUT: {timeframe} Resistance Broken",
+            "order_type": "Buy Stop", "entry": round(resistance + 2, 1),
+            "sl": round(resistance - 25, 1), "tp": round(resistance + 100, 1),
+            "confidence": 0.75, "timeframe": timeframe, "strategy": "BREAK",
+            "reasoning": f"Resistance at {fmt(resistance)} BROKEN! Trend continuation. Buy on retest. SL below broken resistance."
+        }
+    elif current_price < support and _last_support.get(key) != support:
+        _last_support[key] = support
+        _last_break_alert[key] = now
+        signal = {
+            "direction": "SHORT", "setup": f"BREAKDOWN: {timeframe} Support Broken",
+            "order_type": "Sell Stop", "entry": round(support - 2, 1),
+            "sl": round(support + 25, 1), "tp": round(support - 100, 1),
+            "confidence": 0.75, "timeframe": timeframe, "strategy": "BREAK",
+            "reasoning": f"Support at {fmt(support)} BROKEN! Trend reversal. Sell on retest. SL above broken support."
+        }
+    return signal
 def score_signal(sig):
     """Score a signal 0-100 based on quality factors."""
     score = sig.get("confidence", 0.5) * 100

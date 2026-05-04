@@ -125,6 +125,7 @@ def run_monitor():
     from signal_engine import (
         select_best_signals, calculate_multi_tp, format_professional_signal,
         check_active_signals, track_signal, get_active_signal_count,
+        check_level_break,
     )
     from tv_price import get_all_prices
     from mt5_executor import execute_signal as mt5_execute
@@ -359,9 +360,34 @@ def run_monitor():
                         trend_aligned_scalp.append(s)
 
                 # Select best scalp + best swing
+                # ── Check for level breaks and send alerts ──
+                for tf_label, tf_candles in [("15M", m15), ("1H", h1), ("4H", h4)]:
+                    if tf_candles and len(tf_candles) >= 10:
+                        from smc_luxalgo import compute_luxalgo_smc
+                        tf_data = tf_candles[::-1]
+                        r = compute_luxalgo_smc(tf_data, min(50, len(tf_data)//4), 5)
+                        if r:
+                            sh = [x[1] for x in r["swing_highs"]]
+                            sl = [x[1] for x in r["swing_lows"]]
+                            break_sig = check_level_break(symbol, tf_data[-1][4], sh, sl, tf_label)
+                            if break_sig:
+                                break_sig["symbol"] = symbol
+                                break_sig["symbol_name"] = sym_name
+                                break_sig["price_now"] = tf_data[-1][4]
+                                break_sig["session"] = f"{session_emoji} {session_name}"
+                                break_sig["trade_type"] = "SWING"
+                                tp1, tp2, tp3 = calculate_multi_tp(break_sig)
+                                break_sig["tp1"] = tp1; break_sig["tp2"] = tp2; break_sig["tp3"] = tp3
+                                msg = format_professional_signal(break_sig)
+                                for u in target_users:
+                                    tg_send(TOK, u["chat_id"], 
+                                        f"\U0001f514 <b>LEVEL BREAK!</b>\n{msg}")
+                                logger.info("BREAK: %s", break_sig["setup"])
+
+                # Select best scalp + best swing
                 best_scalp = select_best_signals(trend_aligned_scalp)
                 best_swing = select_best_signals(swing_signals)
-                best = best_scalp + best_swing  # Send both, but max 1 scalp + 1 swing per cycle
+                best = best_scalp + best_swing
 
                 for sig in best:
                     # CONFLICT PREVENTION: don't send opposing direction within 30 min

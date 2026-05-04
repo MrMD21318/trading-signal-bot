@@ -137,6 +137,64 @@ def get_active_signal_count(symbol=None):
 
 
 # ── Signal scoring and selection ──────────────────────────────
+
+SCALP_FRAMES = ["1M", "5M", "15M"]
+SWING_FRAMES = ["15M", "1H", "4H"]
+_last_support = {}
+_last_resistance = {}
+_last_break_alert = {}
+
+
+def confirm_multi_tf(signal, all_signals):
+    trade_type = signal.get("trade_type", "SCALP")
+    required_frames = SCALP_FRAMES if trade_type == "SCALP" else SWING_FRAMES
+    direction = signal["direction"]
+    for tf in required_frames:
+        tf_signals = [s for s in all_signals if s.get("timeframe") == tf]
+        if not tf_signals:
+            continue
+        same_dir = sum(1 for s in tf_signals if s["direction"] == direction)
+        total = len(tf_signals)
+        if total > 0 and same_dir / total < 0.4:
+            return False
+    return True
+
+
+def check_level_break(symbol, current_price, swing_highs, swing_lows, timeframe="15M"):
+    global _last_support, _last_resistance, _last_break_alert
+    import time as _time
+    key = f"{symbol}_{timeframe}"
+    now = _time.time()
+    if key in _last_break_alert and now - _last_break_alert[key] < 1800:
+        return None
+
+    resistance = next((h for h in sorted(swing_highs) if h > current_price), None)
+    support = next((l for l in sorted(swing_lows, reverse=True) if l < current_price), None)
+    if not resistance or not support:
+        return None
+
+    signal = None
+    if current_price > resistance and _last_resistance.get(key) != resistance:
+        _last_resistance[key] = resistance
+        _last_break_alert[key] = now
+        signal = {
+            "direction": "LONG", "setup": f"BREAKOUT: {timeframe} Resistance Broken",
+            "order_type": "Buy Stop", "entry": round(resistance + 2, 1),
+            "sl": round(resistance - 25, 1), "tp": round(resistance + 100, 1),
+            "confidence": 0.75, "timeframe": timeframe, "strategy": "BREAK",
+            "reasoning": f"Resistance at {fmt(resistance)} BROKEN! Trend continuation. Buy on retest. SL below broken resistance."
+        }
+    elif current_price < support and _last_support.get(key) != support:
+        _last_support[key] = support
+        _last_break_alert[key] = now
+        signal = {
+            "direction": "SHORT", "setup": f"BREAKDOWN: {timeframe} Support Broken",
+            "order_type": "Sell Stop", "entry": round(support - 2, 1),
+            "sl": round(support + 25, 1), "tp": round(support - 100, 1),
+            "confidence": 0.75, "timeframe": timeframe, "strategy": "BREAK",
+            "reasoning": f"Support at {fmt(support)} BROKEN! Trend reversal. Sell on retest. SL above broken support."
+        }
+    return signal
 def score_signal(sig):
     """Score a signal 0-100 based on quality factors."""
     score = sig.get("confidence", 0.5) * 100
@@ -272,16 +330,15 @@ def fmt(n):
 
 
 def format_professional_signal(sig, is_new=True):
-    """Format a professional signal with multi-TP for Telegram."""
     d = "\U0001f7e2" if sig["direction"] == "LONG" else "\U0001f534"
     strategy = sig.get("strategy", "")
     trade_type = sig.get("trade_type", "")
     if strategy == "SMC":
-        label = "\U0001f9e0 SMC"
+        label_en = "SMC"; label_ar = "\u0633\u0645\u0627\u0631\u062a \u0645\u0648\u0646\u064a"
     elif trade_type == "SWING":
-        label = "\U0001f4c8 SWING"
+        label_en = "SWING"; label_ar = "\u0633\u0648\u064a\u0646\u062c"
     else:
-        label = "\u26a1 SCALP"
+        label_en = "SCALP"; label_ar = "\u0633\u0643\u0627\u0644\u0628"
 
     direction = sig["direction"]
     entry = sig["entry"]
@@ -293,52 +350,72 @@ def format_professional_signal(sig, is_new=True):
     conf = sig.get("confidence", 0.7)
     conf_stars = "\u2b50" * int(conf * 5)
     price_now = sig.get("price_now", entry)
-    symbol_name = sig.get("symbol_name", "") or sig.get("symbol", "")
-    session_str = sig.get("session", "")
-    reasoning = sig.get("reasoning", "")
+    sym_name = sig.get("symbol_name", "") or sig.get("symbol", "")
+    sym = sig.get("symbol", "?")
+    session_str = sig.get("session", "").replace("\U0001f1f8\U0001f1e6","").strip()
+    setup_en = sig.get("setup", "")
+    order_type = sig.get("order_type", "")
 
-    # Arabic translations
-    dir_ar = "\u0634\u0631\u0627\u0621" if direction == "LONG" else "\u0628\u064a\u0639"  # شراء / بيع
-    ar_label = f"\U0001f1f8\U0001f1e6 \u0625\u0634\u0627\u0631\u0629 {dir_ar}"  # 🇸🇦 إشارة شراء/بيع
-    ar_entry = "\u0627\u0644\u062f\u062e\u0648\u0644"  # الدخول
-    ar_sl = "\u0648\u0642\u0641 \u0627\u0644\u062e\u0633\u0627\u0631\u0629"  # وقف الخسارة
-    ar_tp = "\u0627\u0644\u0647\u062f\u0641"  # الهدف
-    ar_conf = "\u0627\u0644\u062b\u0642\u0629"  # الثقة
-
-    setup_names_ar = {
-        "Liquidity Sweep": "\u0643\u0646\u0633 \u0627\u0644\u0633\u064a\u0648\u0644\u0629",
-        "CHoCH Bullish": "\u062a\u063a\u064a\u064a\u0631 \u0627\u0644\u0634\u062e\u0635\u064a\u0629 - \u0635\u0627\u0639\u062f",
-        "CHoCH Bearish": "\u062a\u063a\u064a\u064a\u0631 \u0627\u0644\u0634\u062e\u0635\u064a\u0629 - \u0647\u0627\u0628\u0637",
-        "BOS Bullish": "\u0643\u0633\u0631 \u0627\u0644\u0647\u064a\u0643\u0644 - \u0635\u0627\u0639\u062f",
-        "BOS Bearish": "\u0643\u0633\u0631 \u0627\u0644\u0647\u064a\u0643\u0644 - \u0647\u0627\u0628\u0637",
-        "Bullish Order Block": "\u0643\u062a\u0644\u0629 \u0627\u0644\u0623\u0648\u0627\u0645\u0631 - \u0635\u0627\u0639\u062f\u0629",
-        "Bearish Order Block": "\u0643\u062a\u0644\u0629 \u0627\u0644\u0623\u0648\u0627\u0645\u0631 - \u0647\u0627\u0628\u0637\u0629",
-        "Bullish FVG Fill": "\u0645\u0644\u0621 \u0641\u062c\u0648\u0629 - \u0635\u0627\u0639\u062f\u0629",
-        "Bearish FVG Fill": "\u0645\u0644\u0621 \u0641\u062c\u0648\u0629 - \u0647\u0627\u0628\u0637\u0629",
-    }
-    setup_ar = setup_names_ar.get(sig.get("setup", ""), "")
-
-    if sig["direction"] == "LONG":
+    # ── Arabic ──
+    dir_ar = "\u0634\u0631\u0627\u0621" if direction == "LONG" else "\u0628\u064a\u0639"
+    if direction == "LONG":
         risk_pct = abs(entry - sl) / entry * 100
+        if "Stop" in order_type:
+            order_ar = "\u0623\u0645\u0631 \u0634\u0631\u0627\u0621 \u0645\u062a\u0648\u0642\u0641"
+            order_en = "Buy Stop"
+        else:
+            order_ar = "\u0623\u0645\u0631 \u0634\u0631\u0627\u0621 \u0645\u0639\u0644\u0642"
+            order_en = "Buy Limit"
     else:
         risk_pct = abs(sl - entry) / entry * 100
+        if "Stop" in order_type:
+            order_ar = "\u0623\u0645\u0631 \u0628\u064a\u0639 \u0645\u062a\u0648\u0642\u0641"
+            order_en = "Sell Stop"
+        else:
+            order_ar = "\u0623\u0645\u0631 \u0628\u064a\u0639 \u0645\u0639\u0644\u0642"
+            order_en = "Sell Limit"
+
+    # Translate reasoning key terms to Arabic
+    reasoning = sig.get("reasoning", "")[:250]
+    # Simple key term translation
+    ar_terms = {
+        "resistance": "\u0645\u0642\u0627\u0648\u0645\u0629", "support": "\u062f\u0639\u0645",
+        "breakout": "\u0627\u062e\u062a\u0631\u0627\u0642", "trend": "\u0627\u062a\u062c\u0627\u0647",
+        "buyers": "\u0645\u0634\u062a\u0631\u064a\u0646", "sellers": "\u0628\u0627\u0626\u0639\u064a\u0646",
+        "volume": "\u062d\u062c\u0645", "high": "\u0642\u0645\u0629", "low": "\u0642\u0627\u0639",
+        "liquidity": "\u0633\u064a\u0648\u0644\u0629", "sweep": "\u0643\u0646\u0633",
+        "order block": "\u0643\u062a\u0644\u0629 \u0623\u0648\u0627\u0645\u0631",
+        "reversal": "\u0627\u0646\u0639\u0643\u0627\u0633", "momentum": "\u0632\u062e\u0645",
+        "bullish": "\u0635\u0627\u0639\u062f", "bearish": "\u0647\u0627\u0628\u0637",
+    }
+    reasoning_ar = reasoning
+    for en, ar in ar_terms.items():
+        reasoning_ar = reasoning_ar.replace(en, ar)
+
+    # Order type explanation
+    if "Stop" in order_en:
+        order_reason = "Breakout \u2191" if direction == "LONG" else "Breakdown \u2193"
+        order_reason_ar = "\u0627\u062e\u062a\u0631\u0627\u0642" if direction == "LONG" else "\u0643\u0633\u0631"
+    else:
+        order_reason = "Retest \u2190" if direction == "LONG" else "Reject \u2192"
+        order_reason_ar = "\u0627\u0631\u062a\u062f\u0627\u062f" if direction == "LONG" else "\u0627\u0631\u062a\u062f\u0627\u062f"
 
     return (
-        f"{d} <b>{direction} SIGNAL</b> [{label}] {conf_stars}\n"
-        f"\U0001f4b0 <b>{fmt(price_now)}</b> | "
-        f"{session_str} | "
-        f"\U0001f4ca <b>{symbol_name}</b> | <code>{sig.get('symbol','?')}</code> | {tf}\n\n"
-        f"<b>Setup:</b> {sig.get('setup','')}{' (' + setup_ar + ')' if setup_ar else ''}\n"
-        f"<b>Confidence:</b> {conf:.0%}\n\n"
-        f"<b>\U0001f3af ENTRY:</b> <code>{fmt(entry)}</code>\n"
-        f"<b>\U0001f6d1 STOP:</b>  <code>{fmt(sl)}</code> ({risk_pct:.2f}% risk)\n\n"
-        f"<b>\U0001f3c6 TARGETS:</b>\n"
-        f"  TP1: <code>{fmt(tp1)}</code> | TP2: <code>{fmt(tp2)}</code> | TP3: <code>{fmt(tp3)}</code>\n\n"
-        f"\U0001f1f8\U0001f1e6 \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
-        f"{ar_label} {conf_stars}\n"
-        f"{ar_entry}: <code>{fmt(entry)}</code> | "
-        f"{ar_sl}: <code>{fmt(sl)}</code> | "
-        f"{ar_tp}: <code>{fmt(tp1)}</code> / <code>{fmt(tp2)}</code> / <code>{fmt(tp3)}</code>\n"
-        f"{ar_conf}: {conf:.0%}\n\n"
-        f"<b>\U0001f9e0:</b> <i>{reasoning[:250]}</i>"
+        f"{d} <b>{dir_ar} | {label_ar} | {order_ar} ({order_reason_ar})</b> {conf_stars}\n"
+        f"\U0001f4b0 <code>{fmt(price_now)}</code> | {session_str}\n"
+        f"\U0001f4ca {sym_name} | <code>{sym}</code> | {tf}\n\n"
+        f"\U0001f3af \u0627\u0644\u062f\u062e\u0648\u0644: <code>{fmt(entry)}</code>\n"
+        f"\U0001f6d1 \u0648\u0642\u0641 \u0627\u0644\u062e\u0633\u0627\u0631\u0629: <code>{fmt(sl)}</code> ({risk_pct:.2f}%)\n"
+        f"\U0001f3c6 \u0627\u0644\u0623\u0647\u062f\u0627\u0641: <code>{fmt(tp1)}</code> | <code>{fmt(tp2)}</code> | <code>{fmt(tp3)}</code>\n"
+        f"\u2b50 \u0627\u0644\u062b\u0642\u0629: {conf:.0%}\n\n"
+        f"\U0001f9e0 <i>{reasoning_ar}</i>\n\n"
+        f"{'─' * 20}\n"
+        f"{d} <b>{direction} | {label_en} | {order_en} ({order_reason})</b> {conf_stars}\n"
+        f"\U0001f4b0 <code>{fmt(price_now)}</code> | {session_str}\n"
+        f"\U0001f4ca {sym_name} | <code>{sym}</code> | {tf}\n\n"
+        f"\U0001f3af ENTRY: <code>{fmt(entry)}</code>\n"
+        f"\U0001f6d1 SL: <code>{fmt(sl)}</code> ({risk_pct:.2f}%)\n"
+        f"\U0001f3c6 TARGETS: <code>{fmt(tp1)}</code> | <code>{fmt(tp2)}</code> | <code>{fmt(tp3)}</code>\n"
+        f"\u2b50 Confidence: {conf:.0%}\n\n"
+        f"\U0001f9e0 <i>{reasoning}</i>"
     )
