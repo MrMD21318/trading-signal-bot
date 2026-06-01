@@ -404,7 +404,10 @@ def chat_with_ai(chat_id, user_text, user_name=""):
     if kimi_key:
         try:
             resp = req.post("https://integrate.api.nvidia.com/v1/chat/completions",
-                headers={"Authorization": f"Bearer {kimi_key}"},
+                headers={
+                    "Authorization": f"Bearer {kimi_key}",
+                    "Content-Type": "application/json"
+                },
                 json={
                     "model": "moonshotai/kimi-k2.6",
                     "max_tokens": 500,
