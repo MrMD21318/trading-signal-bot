@@ -396,7 +396,7 @@ def chat_with_ai(chat_id, user_text, user_name=""):
     except:
         pass
 
-    kimi_key = os.getenv("KIMI_API_KEY", "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")
+    kimi_key = os.getenv("KIMI_API_KEY", "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")
     openai_key = os.getenv("OPENAI_API_KEY", "")
     system_prompt = f"You are an expert SMC/ICT trader analyzing CFI:US100 (Nasdaq100). Reply in Arabic+English. Be helpful, decisive, and technical. Current market: {ctx}. Give entry/SL/TP when asked. Use emojis."
 

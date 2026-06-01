@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 _last_ai_time = {}
 _ai_cache = {}
-KIMI_API = os.getenv("KIMI_API_KEY", "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")
+KIMI_API = os.getenv("KIMI_API_KEY", "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")
 KIMI_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
 # Cache the last AI decision to avoid spamming API
@@ -32,7 +32,7 @@ def ask_ai(prompt, max_tokens=300):
     import requests
     
     # Get API keys
-    kimi_key = os.getenv("KIMI_API_KEY", "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")
+    kimi_key = os.getenv("KIMI_API_KEY", "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")
     openai_key = os.getenv("OPENAI_API_KEY", "")
     
     # Try Moonshot Kimi first

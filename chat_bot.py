@@ -8,7 +8,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8644679098:AAF0Ag9nNOElhldvpTXXO2rHLB7dPmOtM5A")
-AI_KEY = os.getenv("KIMI_API_KEY", "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")
+AI_KEY = os.getenv("KIMI_API_KEY", "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")
 API = f"https://api.telegram.org/bot{TOKEN}"
 AI_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
