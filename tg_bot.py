@@ -121,6 +121,7 @@ def handle_update(update):
 def handle_message(msg):
     chat_id = msg.get("chat", {}).get("id")
     text = (msg.get("text", "") or "").strip()
+    text_lower = text.lower()
     first = msg.get("chat", {}).get("first_name", "")
     username = msg.get("chat", {}).get("username", "")
 
@@ -137,7 +138,7 @@ def handle_message(msg):
         send_msg(chat_id, "✅ Phone saved! Now use the menu below:", main_menu_keyboard())
         return "ok"
 
-    if text in ("/start", "start"):
+    if text_lower in ("/start", "start"):
         user = get_user(chat_id)
         if user and user.get("active"):
             # Already active
@@ -166,7 +167,7 @@ def handle_message(msg):
         return "ok"
 
     # ── Trading commands ──
-    if text in ("/price", "price", "/price@TradingSignalBot"):
+    if text_lower in ("/price", "price", "/price@tradingsignalbot"):
         try:
             import MetaTrader5 as mt5
             mt5.initialize()
@@ -180,7 +181,7 @@ def handle_message(msg):
             send_msg(chat_id, "Error getting price")
         return "ok"
 
-    if text in ("/signal", "signal", "/signal@TradingSignalBot"):
+    if text_lower in ("/signal", "signal", "/signal@tradingsignalbot"):
         try:
             import sys, os
             sys.path.insert(0, os.path.dirname(__file__))
@@ -203,7 +204,7 @@ def handle_message(msg):
             send_msg(chat_id, "Error")
         return "ok"
 
-    if text in ("/analysis", "analysis", "/analysis@TradingSignalBot"):
+    if text_lower in ("/analysis", "analysis", "/analysis@tradingsignalbot"):
         try:
             import sys, os; sys.path.insert(0, os.path.dirname(__file__))
             from run_us100_monitor import get_candles, fmt
@@ -225,7 +226,7 @@ def handle_message(msg):
             send_msg(chat_id, f"Error: {e}")
         return "ok"
 
-    if text in ("/chart", "/analyse", "chart", "analyse", "/chart@TradingSignalBot"):
+    if text_lower in ("/chart", "/analyse", "chart", "analyse", "/chart@tradingsignalbot"):
         send_msg(chat_id, "⏳ <b>Opening TradingView and capturing live CFI:US100 chart...</b>\n<i>Please wait ~8 seconds.</i>")
         try:
             from tv_capture_helper import capture_tv_chart
