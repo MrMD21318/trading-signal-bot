@@ -6,6 +6,9 @@ import logging
 import time
 import requests
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from database import (
     upsert_user, get_user, set_user_active, add_user_symbol,
