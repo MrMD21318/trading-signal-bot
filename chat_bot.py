@@ -8,9 +8,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8644679098:AAF0Ag9nNOElhldvpTXXO2rHLB7dPmOtM5A")
-AI_KEY = os.getenv("DEEPSEEK_API_KEY", "sk-a0f838920b5348d58b1bf10e34748729")
+AI_KEY = os.getenv("KIMI_API_KEY", "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")
 API = f"https://api.telegram.org/bot{TOKEN}"
-AI_URL = "https://api.deepseek.com/v1/chat/completions"
+AI_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
 
 def tg(method, params=None):
@@ -40,9 +40,12 @@ def ask_ai(user_text, user_name=""):
     ctx = get_market_context()
     try:
         r = requests.post(AI_URL,
-            headers={"Authorization": f"Bearer {AI_KEY}"},
+            headers={"Authorization": f"Bearer {AI_KEY}", "Content-Type": "application/json"},
             json={
-                "model": "deepseek-chat", "max_tokens": 600, "temperature": 0.4,
+                "model": "moonshotai/kimi-k2.6",
+                "max_tokens": 600,
+                "temperature": 1.00,
+                "top_p": 1.00,
                 "messages": [
                     {"role": "system", "content": f"You are a professional SMC/ICT trader for CFI:US100. Market: {ctx}. Reply in Arabic+English. Be helpful, decisive. Give entry/SL/TP when asked. Use emojis. Keep under 500 chars."},
                     {"role": "user", "content": user_text}

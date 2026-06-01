@@ -20,46 +20,45 @@ logger = logging.getLogger(__name__)
 
 _last_ai_time = {}
 _ai_cache = {}
-
-DEEPSEEK_API = os.getenv("DEEPSEEK_API_KEY", "sk-a0f838920b5348d58b1bf10e34748729")
-DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
+KIMI_API = os.getenv("KIMI_API_KEY", "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")
+KIMI_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
 # Cache the last AI decision to avoid spamming API
 _last_ai_decision_time = {}
 _ai_cache = {}
+
 def ask_ai(prompt, max_tokens=300):
-    """Send a prompt to DeepSeek or OpenAI and get response."""
+    """Send a prompt to Moonshot Kimi (Nvidia) or OpenAI and get response."""
     import requests
     
     # Get API keys
-    deepseek_key = os.getenv("DEEPSEEK_API_KEY", "sk-a0f838920b5348d58b1bf10e34748729")
+    kimi_key = os.getenv("KIMI_API_KEY", "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")
     openai_key = os.getenv("OPENAI_API_KEY", "")
     
-    # Try DeepSeek first
-    if deepseek_key:
+    # Try Moonshot Kimi first
+    if kimi_key:
         try:
-            logger.info("Calling DeepSeek API...")
+            logger.info("Calling Kimi K2.6 API via Nvidia...")
             r = requests.post(
-                "https://api.deepseek.com/v1/chat/completions",
-                headers={"Authorization": f"Bearer {deepseek_key}", "Content-Type": "application/json"},
+                KIMI_URL,
+                headers={"Authorization": f"Bearer {kimi_key}", "Content-Type": "application/json"},
                 json={
-                    "model": "deepseek-chat",
+                    "model": "moonshotai/kimi-k2.6",
                     "messages": [
                         {"role": "system", "content": "You are a professional ICT/SMC trader analyzing CFI:US100 (Nasdaq 100). You speak Arabic and English. Be decisive — never say 'it depends'. Answer in JSON format only."},
                         {"role": "user", "content": prompt}
                     ],
                     "max_tokens": max_tokens,
-                    "temperature": 0.3,
+                    "temperature": 1.00,
+                    "top_p": 1.00,
                 },
                 timeout=15,
             )
             if r.status_code == 200:
                 return r.json()["choices"][0]["message"]["content"]
-            logger.warning("DeepSeek error: %s - %s", r.status_code, r.text[:200])
+            logger.warning("Kimi error: %s - %s", r.status_code, r.text[:200])
         except Exception as e:
-            logger.warning("DeepSeek API failed: %s", e)
-
-    # Try OpenAI as fallback
+            logger.warning("Kimi API failed: %s", e)    # Try OpenAI as fallback
     if openai_key:
         try:
             logger.info("Falling back to OpenAI API...")

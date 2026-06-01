@@ -373,11 +373,9 @@ def poll_updates():
         except Exception as e:
             logger.error("Poll error: %s", e)
             time.sleep(5)
-
-
 # ── AI Chat handler ────────────────────────────────────────────
 def chat_with_ai(chat_id, user_text, user_name=""):
-    """Send user message to DeepSeek and return response."""
+    """Send user message to Moonshot Kimi (Nvidia) or OpenAI and return response."""
     import requests as req, os, sys
     sys.path.insert(0, os.path.dirname(__file__))
 
@@ -395,23 +393,51 @@ def chat_with_ai(chat_id, user_text, user_name=""):
     except:
         pass
 
-    key = os.getenv("DEEPSEEK_API_KEY", "sk-a0f838920b5348d58b1bf10e34748729")
-    try:
-        resp = req.post("https://api.deepseek.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {key}"},
-            json={
-                "model": "deepseek-chat",
-                "max_tokens": 500,
-                "temperature": 0.4,
-                "messages": [
-                    {"role": "system", "content": f"You are an expert SMC/ICT trader analyzing CFI:US100 (Nasdaq100). Reply in Arabic+English. Be helpful, decisive, and technical. Current market: {ctx}. Give entry/SL/TP when asked. Use emojis."},
-                    {"role": "user", "content": user_text}
-                ]
-            },
-            timeout=20
-        )
-        if resp.status_code == 200:
-            return resp.json()["choices"][0]["message"]["content"]
-    except:
-        pass
+    kimi_key = os.getenv("KIMI_API_KEY", "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")
+    openai_key = os.getenv("OPENAI_API_KEY", "")
+    system_prompt = f"You are an expert SMC/ICT trader analyzing CFI:US100 (Nasdaq100). Reply in Arabic+English. Be helpful, decisive, and technical. Current market: {ctx}. Give entry/SL/TP when asked. Use emojis."
+
+    # Try Kimi first
+    if kimi_key:
+        try:
+            resp = req.post("https://integrate.api.nvidia.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {kimi_key}"},
+                json={
+                    "model": "moonshotai/kimi-k2.6",
+                    "max_tokens": 500,
+                    "temperature": 1.00,
+                    "top_p": 1.00,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_text}
+                    ]
+                },
+                timeout=15
+            )
+            if resp.status_code == 200:
+                return resp.json()["choices"][0]["message"]["content"]
+        except Exception as e:
+            logger.warning("Chat Kimi failed: %s", e)
+
+    # Try OpenAI as fallback
+    if openai_key:
+        try:
+            resp = req.post("https://api.openai.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {openai_key}"},
+                json={
+                    "model": "gpt-4o",
+                    "max_tokens": 500,
+                    "temperature": 0.4,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_text}
+                    ]
+                },
+                timeout=15
+            )
+            if resp.status_code == 200:
+                return resp.json()["choices"][0]["message"]["content"]
+        except Exception as e:
+            logger.warning("Chat OpenAI failed: %s", e)
+
     return "Error connecting to AI. Try again."
