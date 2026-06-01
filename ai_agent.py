@@ -27,35 +27,63 @@ DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
 # Cache the last AI decision to avoid spamming API
 _last_ai_decision_time = {}
 _ai_cache = {}
-
-
 def ask_ai(prompt, max_tokens=300):
-    """Send a prompt to DeepSeek and get response."""
+    """Send a prompt to DeepSeek or OpenAI and get response."""
     import requests
-    try:
-        r = requests.post(
-            DEEPSEEK_URL,
-            headers={"Authorization": f"Bearer {DEEPSEEK_API}", "Content-Type": "application/json"},
-            json={
-                "model": "deepseek-chat",
-                "messages": [
-                    {"role": "system", "content": "You are a professional ICT/SMC trader analyzing CFI:US100 (Nasdaq 100). You speak Arabic and English. Be decisive — never say 'it depends'. Answer in JSON format only."},
-                    {"role": "user", "content": prompt}
-                ],
-                "max_tokens": max_tokens,
-                "temperature": 0.3,
-            },
-            timeout=20,
-        )
-        if r.status_code == 200:
-            return r.json()["choices"][0]["message"]["content"]
-        logger.warning("DeepSeek error: %s", r.status_code)
-        return None
-    except Exception as e:
-        logger.warning("DeepSeek API error: %s", e)
-        return None
+    
+    # Get API keys
+    deepseek_key = os.getenv("DEEPSEEK_API_KEY", "sk-a0f838920b5348d58b1bf10e34748729")
+    openai_key = os.getenv("OPENAI_API_KEY", "")
+    
+    # Try DeepSeek first
+    if deepseek_key:
+        try:
+            logger.info("Calling DeepSeek API...")
+            r = requests.post(
+                "https://api.deepseek.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {deepseek_key}", "Content-Type": "application/json"},
+                json={
+                    "model": "deepseek-chat",
+                    "messages": [
+                        {"role": "system", "content": "You are a professional ICT/SMC trader analyzing CFI:US100 (Nasdaq 100). You speak Arabic and English. Be decisive — never say 'it depends'. Answer in JSON format only."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "max_tokens": max_tokens,
+                    "temperature": 0.3,
+                },
+                timeout=15,
+            )
+            if r.status_code == 200:
+                return r.json()["choices"][0]["message"]["content"]
+            logger.warning("DeepSeek error: %s - %s", r.status_code, r.text[:200])
+        except Exception as e:
+            logger.warning("DeepSeek API failed: %s", e)
 
-
+    # Try OpenAI as fallback
+    if openai_key:
+        try:
+            logger.info("Falling back to OpenAI API...")
+            r = requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
+                json={
+                    "model": "gpt-4o",
+                    "messages": [
+                        {"role": "system", "content": "You are a professional ICT/SMC trader analyzing CFI:US100 (Nasdaq 100). You speak Arabic and English. Be decisive — never say 'it depends'. Answer in JSON format only."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "max_tokens": max_tokens,
+                    "temperature": 0.3,
+                },
+                timeout=15,
+            )
+            if r.status_code == 200:
+                return r.json()["choices"][0]["message"]["content"]
+            logger.warning("OpenAI error: %s - %s", r.status_code, r.text[:200])
+        except Exception as e:
+            logger.warning("OpenAI API failed: %s", e)
+            
+    return None
 def evaluate_signal(signal, candles_daily, candles_15m):
     """AI evaluates a trading signal and decides whether to execute.
 

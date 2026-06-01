@@ -456,8 +456,35 @@ def run_monitor():
                             msg = format_professional_signal(sig)
                         logger.info("AI MODIFIED: new SL=%s", new_sl)
 
+                    # Capture chart screenshot if confidence is high (e.g. >= 0.70)
+                    photo_path = None
+                    if sig.get("confidence", 0) >= 0.70:
+                        try:
+                            from tv_capture_helper import capture_tv_chart
+                            # Capture chart for the signal's timeframe
+                            photo_path = capture_tv_chart(symbol=symbol, timeframe=sig.get("timeframe", "15M"))
+                        except Exception as capture_err:
+                            logger.error("Failed to capture chart for signal: %s", capture_err)
+
                     for u in target_users:
-                        tg_send(TOK, u["chat_id"], msg)
+                        photo_sent = False
+                        if photo_path and os.path.exists(photo_path):
+                            try:
+                                from tg_bot import send_photo
+                                if len(msg) <= 1024:
+                                    send_photo(u["chat_id"], photo_path, caption=msg)
+                                    photo_sent = True
+                                else:
+                                    # Caption too long, send photo first, then text
+                                    send_photo(u["chat_id"], photo_path, caption=f"📊 {symbol} {sig['direction']} Chart")
+                                    tg_send(TOK, u["chat_id"], msg)
+                                    photo_sent = True
+                            except Exception as photo_err:
+                                logger.error("Failed to send photo to Telegram: %s", photo_err)
+                        
+                        if not photo_sent:
+                            tg_send(TOK, u["chat_id"], msg)
+
                         log_alert(u["chat_id"], symbol, sig["direction"], sig["setup"],
                                  sig["entry"], sig["sl"], tp2, sig.get("strategy", ""),
                                  sig.get("timeframe", ""), sig.get("confidence", 0))

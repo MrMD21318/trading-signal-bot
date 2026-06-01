@@ -1,5 +1,6 @@
 """Telegram bot with conversation flow — onboards users to choose their markets."""
 
+import os
 import json
 import logging
 import time
@@ -30,6 +31,24 @@ def send_msg(chat_id, text, reply_markup=None, parse_mode="HTML"):
     if reply_markup:
         params["reply_markup"] = json.dumps(reply_markup)
     return tg("sendMessage", params)
+
+
+def send_photo(chat_id, photo_path, caption=None, reply_markup=None, parse_mode="HTML"):
+    try:
+        url = f"{API}{TOKEN}/sendPhoto"
+        with open(photo_path, "rb") as f:
+            files = {"photo": f}
+            data = {"chat_id": chat_id, "parse_mode": parse_mode}
+            if caption:
+                data["caption"] = caption
+            if reply_markup:
+                data["reply_markup"] = json.dumps(reply_markup)
+            r = requests.post(url, data=data, files=files, timeout=30)
+            return r.json()
+    except Exception as e:
+        logger.error("Send photo failed: %s", e)
+        return {"ok": False}
+
 
 
 def edit_msg(chat_id, msg_id, text, reply_markup=None, parse_mode="HTML"):
@@ -131,7 +150,8 @@ def handle_message(msg):
                 f"Status: <b>ACTIVE</b>{exp_str}\n"
                 f"Markets: <code>{', '.join(syms_list) or 'None'}</code>\n\n"
                 "You are receiving trading signals.\n"
-                "/menu — Manage | /status — Stats | /stop — Pause",
+                "/menu — Manage | /status — Stats | /stop — Pause\n"
+                "/chart — Capture live TradingView chart and analyze it!",
                 main_menu_keyboard(),
             )
         else:
@@ -143,6 +163,99 @@ def handle_message(msg):
                 "You'll receive a confirmation message once activated.\n\n"
                 "<i>Your Chat ID: <code>{}</code></i>".format(chat_id),
             )
+        return "ok"
+
+    # ── Trading commands ──
+    if text in ("/price", "price", "/price@TradingSignalBot"):
+        try:
+            import MetaTrader5 as mt5
+            mt5.initialize()
+            mt5.login(22148595)
+            t = mt5.symbol_info_tick("US100_Spot")
+            if t:
+                send_msg(chat_id, f"\U0001f4b0 <b>US100: {t.ask:.1f}</b>\nSpread: {t.ask-t.bid:.1f}")
+            else:
+                send_msg(chat_id, "MT5 not connected")
+        except:
+            send_msg(chat_id, "Error getting price")
+        return "ok"
+
+    if text in ("/signal", "signal", "/signal@TradingSignalBot"):
+        try:
+            import sys, os
+            sys.path.insert(0, os.path.dirname(__file__))
+            from run_us100_monitor import get_candles, fmt
+            m1 = get_candles("CFI:US100", "1", 5)
+            m5 = get_candles("CFI:US100", "5", 4)
+            if m1 and m5:
+                p = m1[0][4]
+                g1 = sum(1 for c in m1[:5] if c[4] > c[1])
+                g5 = sum(1 for c in m5[:4] if c[4] > c[1])
+                trend = "BULLISH" if g5 >= 3 else "BEARISH" if g5 <= 1 else "NEUTRAL"
+                send_msg(chat_id,
+                    f"\U0001f4ca <b>Quick Signal</b>\n"
+                    f"Price: <code>{fmt(p)}</code>\n"
+                    f"1M: {g1}/5 green\n5M: {g5}/4 green\n"
+                    f"Trend: <b>{trend}</b>\n\n"
+                    f"{'BUY' if trend=='BULLISH' else 'SELL' if trend=='BEARISH' else 'WAIT'}"
+                )
+        except:
+            send_msg(chat_id, "Error")
+        return "ok"
+
+    if text in ("/analysis", "analysis", "/analysis@TradingSignalBot"):
+        try:
+            import sys, os; sys.path.insert(0, os.path.dirname(__file__))
+            from run_us100_monitor import get_candles, fmt
+            from smc_manual import find_swings, find_order_blocks, find_liquidity
+            m15 = get_candles("CFI:US100", "15", 30)[::-1]
+            p = m15[-1][4]
+            h, l = find_swings(m15, 10)
+            obs = find_order_blocks(m15)
+            liqs = find_liquidity(m15)
+            msg = f"\U0001f9e0 <b>SMC Analysis</b>\nPrice: <code>{fmt(p)}</code>\n"
+            if h: msg += f"Resist: {fmt(h[-1][1])}\n"
+            if l: msg += f"Support: {fmt(l[-1][1])}\n"
+            near_ob = [o for o in obs if o[2] <= p <= o[3]]
+            if near_ob: msg += f"OB: {near_ob[0][0]} {fmt(near_ob[0][2])}-{fmt(near_ob[0][3])}\n"
+            near_liq = [x for x in liqs if abs(x[2]-p)/p < 0.002]
+            if near_liq: msg += f"Liq: {near_liq[0][0]} at {fmt(near_liq[0][2])}\n"
+            send_msg(chat_id, msg)
+        except Exception as e:
+            send_msg(chat_id, f"Error: {e}")
+        return "ok"
+
+    if text in ("/chart", "/analyse", "chart", "analyse", "/chart@TradingSignalBot"):
+        send_msg(chat_id, "⏳ <b>Opening TradingView and capturing live CFI:US100 chart...</b>\n<i>Please wait ~8 seconds.</i>")
+        try:
+            from tv_capture_helper import capture_tv_chart
+            # Capture 15M chart
+            photo_path = capture_tv_chart(symbol="CFI:US100", timeframe="15M")
+            if photo_path and os.path.exists(photo_path):
+                send_msg(chat_id, "🤖 <b>Chart captured! Running expert GPT-4 Vision analysis...</b>")
+                
+                # Analyze using GPT-4 Vision helper
+                from tv_capture import analyze_with_gpt
+                analysis_text = analyze_with_gpt(photo_path, "15M")
+                
+                caption = f"📊 <b>CFI:US100 15M Live Chart Analysis</b>\n\n{analysis_text}"
+                if len(caption) > 1024:
+                    send_photo(chat_id, photo_path, caption="📊 CFI:US100 15M Live Chart")
+                    send_msg(chat_id, analysis_text)
+                else:
+                    send_photo(chat_id, photo_path, caption=caption)
+            else:
+                send_msg(chat_id, "❌ Failed to capture chart screenshot. Make sure chrome is running correctly.")
+        except Exception as e:
+            logger.error("Chart command error: %s", e)
+            send_msg(chat_id, f"❌ Error: {e}")
+        return "ok"
+
+    # AI Chat Fallback - natural chat
+    if text:
+        tg("sendChatAction", {"chat_id": chat_id, "action": "typing"})
+        reply = chat_with_ai(chat_id, text, first)
+        send_msg(chat_id, reply)
         return "ok"
 
 
@@ -168,67 +281,8 @@ def handle_callback(cb):
         if not selected:
             edit_msg(chat_id, msg_id, "⚠️ You must select at least one market. Try again:", markets_keyboard([]))
             user_states[chat_id] = {"state": "choosing", "selected": [], "message_id": None}
-        return "ok"
-
-    # ── Trading commands ──
-    if text in ("/price", "price"):
-        try:
-            import MetaTrader5 as mt5
-            mt5.initialize()
-            mt5.login(22148595)
-            t = mt5.symbol_info_tick("US100_Spot")
-            if t:
-                send_msg(chat_id, f"\U0001f4b0 <b>US100: {t.ask:.1f}</b>\nSpread: {t.ask-t.bid:.1f}")
-            else:
-                send_msg(chat_id, "MT5 not connected")
-        except:
-            send_msg(chat_id, "Error getting price")
-        return "ok"
-
-    if text in ("/signal", "signal"):
-        try:
-            import sys, os
-            sys.path.insert(0, os.path.dirname(__file__))
-            from run_us100_monitor import get_candles, fmt
-            m1 = get_candles("CFI:US100", "1", 5)
-            m5 = get_candles("CFI:US100", "5", 4)
-            if m1 and m5:
-                p = m1[0][4]
-                g1 = sum(1 for c in m1[:5] if c[4] > c[1])
-                g5 = sum(1 for c in m5[:4] if c[4] > c[1])
-                trend = "BULLISH" if g5 >= 3 else "BEARISH" if g5 <= 1 else "NEUTRAL"
-                send_msg(chat_id,
-                    f"\U0001f4ca <b>Quick Signal</b>\n"
-                    f"Price: <code>{fmt(p)}</code>\n"
-                    f"1M: {g1}/5 green\n5M: {g5}/4 green\n"
-                    f"Trend: <b>{trend}</b>\n\n"
-                    f"{'BUY' if trend=='BULLISH' else 'SELL' if trend=='BEARISH' else 'WAIT'}"
-                )
-        except:
-            send_msg(chat_id, "Error")
-        return "ok"
-
-    if text in ("/analysis", "analysis"):
-        try:
-            import sys, os; sys.path.insert(0, os.path.dirname(__file__))
-            from run_us100_monitor import get_candles, fmt
-            from smc_manual import find_swings, find_order_blocks, find_liquidity
-            m15 = get_candles("CFI:US100", "15", 30)[::-1]
-            p = m15[-1][4]
-            h, l = find_swings(m15, 10)
-            obs = find_order_blocks(m15)
-            liqs = find_liquidity(m15)
-            msg = f"\U0001f9e0 <b>SMC Analysis</b>\nPrice: <code>{fmt(p)}</code>\n"
-            if h: msg += f"Resist: {fmt(h[-1][1])}\n"
-            if l: msg += f"Support: {fmt(l[-1][1])}\n"
-            near_ob = [o for o in obs if o[2] <= p <= o[3]]
-            if near_ob: msg += f"OB: {near_ob[0][0]} {fmt(near_ob[0][2])}-{fmt(near_ob[0][3])}\n"
-            near_liq = [x for x in liqs if abs(x[2]-p)/p < 0.002]
-            if near_liq: msg += f"Liq: {near_liq[0][0]} at {fmt(near_liq[0][2])}\n"
-            send_msg(chat_id, msg)
-        except Exception as e:
-            send_msg(chat_id, f"Error: {e}")
-        return "ok"
+            return "ok"
+            
         # Save to DB
         conn_remove = __import__("database").get_conn()
         conn_remove.execute("DELETE FROM user_symbols WHERE chat_id=?", (chat_id,))

@@ -4,9 +4,13 @@ TP based on next liquidity pool, not arbitrary R:R.
 """
 
 import os
+import logging
 import pandas as pd
 
 from smc_manual import find_swings, find_bos_choch, find_order_blocks, find_fvg, find_liquidity
+
+logger = logging.getLogger(__name__)
+
 
 
 def candles_to_ohlc(candles):
@@ -60,6 +64,25 @@ def analyze_smc(candles, timeframe="15M", candles_lower=None, candles_higher=Non
     # Convert to our internal format
     swing_highs = [p for _, p in swings_high]
     swing_lows = [p for _, p in swings_low]
+
+    # ── LuxAlgo Cross-Check Overlay ──
+    try:
+        from smc_luxalgo import compute_luxalgo_smc
+        lux = compute_luxalgo_smc(candles_list, swing_length=min(40, len(candles_list)//3), internal_length=5)
+        if lux:
+            swing_highs = [p for _, p in lux.get("swing_highs", [])]
+            swing_lows = [p for _, p in lux.get("swing_lows", [])]
+            if lux.get("order_blocks"):
+                # Map Bullish/Bearish from LuxAlgo swing point OBs
+                ob_list = []
+                for bias, idx, o_h, o_l in lux["order_blocks"]:
+                    ob_list.append((bias, idx, o_h, o_l))
+            if lux.get("bos"):
+                bos_list = lux["bos"]
+            if lux.get("choch"):
+                choch_list = lux["choch"]
+    except Exception as e:
+        logger.error("LuxAlgo cross-check overlay failed, using manual SMC: %s", e)
 
     latest_bos = {"type": bos_list[-1][0], "level": bos_list[-1][2], "idx": bos_list[-1][1]} if bos_list else None
     latest_choch = {"type": choch_list[-1][0], "level": choch_list[-1][2], "idx": choch_list[-1][1]} if choch_list else None

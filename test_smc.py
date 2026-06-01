@@ -5,13 +5,13 @@ sys.path.insert(0, ".")
 from run_us100_monitor import get_candles
 from smc_analysis import analyze_smc, fmt
 
-m15 = get_candles("15", 50)
-m5 = get_candles("5", 40)
-m1 = get_candles("1", 60)
+m15 = get_candles("CFI:US100", "15", 50)
+m5 = get_candles("CFI:US100", "5", 40)
+m1 = get_candles("CFI:US100", "1", 60)
 
 print(f"Candles: 15M={len(m15)}, 5M={len(m5)}, 1M={len(m1)}")
 
-sig = analyze_smc(m15, m5, m1)
+sig = analyze_smc(m15, "15M", m5, m1)
 print(f"\nSMC signals found: {len(sig)}")
 print("=" * 60)
 
